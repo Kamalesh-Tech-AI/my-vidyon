@@ -47,20 +47,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Safety check for unconfigured Supabase
+    if (!isSupabaseConfigured()) {
+      setState(prev => ({ ...prev, isLoading: false }));
+      return;
+    }
+
     // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        fetchUserProfile(session.user.id, session.user.email!).then(user => {
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) throw error;
+
+        if (session) {
+          const user = await fetchUserProfile(session.user.id, session.user.email!);
           setState({
             user,
             isAuthenticated: !!user,
             isLoading: false,
           });
-        });
-      } else {
+        } else {
+          setState(prev => ({ ...prev, isLoading: false }));
+        }
+      } catch (err) {
+        console.error("Auth initialization error:", err);
+        // Ensure loading state is cleared even on error
         setState(prev => ({ ...prev, isLoading: false }));
       }
-    });
+    };
+
+    initAuth();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -84,52 +101,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUserProfile]);
 
   const login = useCallback(async (credentials: LoginCredentials) => {
+    console.log('[AUTH] Login started for:', credentials.email);
     setState(prev => ({ ...prev, isLoading: true }));
 
-    if (!isSupabaseConfigured()) {
-      // Fallback to demo logic for development if Supabase is not configured
-      toast.info("Using demo login (Supabase not configured)");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      if (!isSupabaseConfigured()) {
+        console.log('[AUTH] Using demo mode');
+        // Fallback to demo logic for development if Supabase is not configured
+        toast.info("Using demo login (Supabase not configured)");
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-      let role: UserRole = 'student';
-      if (credentials.email === 'ADMINERP@gmail.com' || credentials.email.includes('admin')) role = 'admin';
-      else if (credentials.email === 'INST@gmail.com' || credentials.email.includes('institution')) role = 'institution';
-      else if (credentials.email.includes('STAFF') || credentials.email.includes('faculty')) role = 'faculty';
-      else if (credentials.email === 'PARENT@gmail.com' || credentials.email.includes('parent')) role = 'parent';
+        let role: UserRole = 'student';
+        if (credentials.email === 'ADMINERP@gmail.com' || credentials.email.includes('admin')) role = 'admin';
+        else if (credentials.email === 'INST@gmail.com' || credentials.email.includes('institution')) role = 'institution';
+        else if (credentials.email.includes('STAFF') || credentials.email.includes('faculty')) role = 'faculty';
+        else if (credentials.email === 'PARENT@gmail.com' || credentials.email.includes('parent')) role = 'parent';
 
-      const demoUser: User = {
-        id: 'DEMO001',
+        const demoUser: User = {
+          id: 'DEMO001',
+          email: credentials.email,
+          name: 'Demo User',
+          role: role,
+        };
+
+        setState({
+          user: demoUser,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+        navigate(ROLE_ROUTES[role]);
+        return;
+      }
+
+      console.log('[AUTH] Calling Supabase signInWithPassword');
+
+      // Add timeout to prevent infinite hang
+      const authPromise = supabase.auth.signInWithPassword({
         email: credentials.email,
-        name: 'Demo User',
-        role: role,
-      };
-
-      setState({
-        user: demoUser,
-        isAuthenticated: true,
-        isLoading: false,
+        password: credentials.password,
       });
-      navigate(ROLE_ROUTES[role]);
-      return;
-    }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: credentials.email,
-      password: credentials.password,
-    });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Login request timed out after 60 seconds. Please check your internet connection.')), 60000)
+      );
 
-    if (error) {
+      const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
+
+      if (error) {
+        console.error('[AUTH] Supabase auth error:', error);
+        throw error;
+      }
+
+      console.log('[AUTH] Auth successful, user ID:', data.user?.id);
+
+      if (!data.user?.email) {
+        throw new Error("User email not found");
+      }
+
+      console.log('[AUTH] Fetching user profile...');
+      const user = await fetchUserProfile(data.user.id, data.user.email);
+
+      if (user) {
+        console.log('[AUTH] Profile found, role:', user.role);
+        setState({
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+        console.log('[AUTH] Navigating to:', ROLE_ROUTES[user.role]);
+        navigate(ROLE_ROUTES[user.role]);
+      } else {
+        console.error('[AUTH] No profile found in database');
+        await supabase.auth.signOut();
+        throw new Error("Profile not found. Please contact your administrator.");
+      }
+    } catch (error: any) {
+      console.error('[AUTH] Login error:', error);
       setState(prev => ({ ...prev, isLoading: false }));
-      toast.error(error.message);
+      toast.error(error.message || "An error occurred during login");
       throw error;
-    }
-
-    const user = await fetchUserProfile(data.user.id, data.user.email!);
-    if (user) {
-      navigate(ROLE_ROUTES[user.role]);
-    } else {
-      toast.error("Profile not found. Contact administrator.");
-      await supabase.auth.signOut();
     }
   }, [navigate, fetchUserProfile]);
 

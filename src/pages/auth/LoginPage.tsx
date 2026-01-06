@@ -4,6 +4,7 @@ import { useTranslation } from '@/i18n/TranslationContext';
 import { LanguageSelector } from '@/components/common/LanguageSelector';
 import { Button } from '@/components/ui/button';
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const ADS_DATA = [
   {
@@ -25,13 +26,29 @@ const ADS_DATA = [
 ];
 
 export function LoginPage() {
-  const { login, isLoading } = useAuth();
+  const { login, isLoading: isAuthLoading, isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentAd, setCurrentAd] = useState(0);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      // If already logged in, redirect to appropriate dashboard
+      const ROLE_ROUTES: Record<string, string> = {
+        student: '/student',
+        faculty: '/faculty',
+        institution: '/institution',
+        admin: '/admin',
+        parent: '/parent',
+      };
+      navigate(ROLE_ROUTES[user.role] || '/');
+    }
+  }, [isAuthenticated, user, navigate]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -49,10 +66,13 @@ export function LoginPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await login({ email, password });
-    } catch {
-      setError('Invalid credentials');
+    } catch (err: any) {
+      setError(err.message || 'Invalid credentials');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -146,9 +166,9 @@ export function LoginPage() {
             <Button
               type="submit"
               className="w-full py-6 bg-primary hover:bg-primary/90 text-primary-foreground text-lg font-bold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98]"
-              disabled={isLoading}
+              disabled={isSubmitting}
             >
-              {isLoading ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-3 animate-spin" />
                   {t.login.signingIn}

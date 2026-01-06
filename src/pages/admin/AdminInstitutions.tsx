@@ -7,44 +7,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Search, Filter, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export function AdminInstitutions() {
   const navigate = useNavigate();
-  const [institutions, setInstitutions] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchInstitutions();
-
-    // Subscribe to changes
-    const channel = supabase
-      .channel('public:institutions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'institutions' }, () => {
-        fetchInstitutions();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  async function fetchInstitutions() {
-    try {
+  const { data: institutions = [], isLoading } = useQuery({
+    queryKey: ['admin-institutions'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('institutions')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setInstitutions(data || []);
-    } catch (error) {
-      console.error('Error fetching institutions:', error);
-    } finally {
-      setIsLoading(false);
+      return data || [];
     }
-  }
+  });
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('public:institutions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'institutions' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-institutions'] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const handleAddInstitution = () => {
     navigate('/admin/add-institution');
@@ -119,12 +113,15 @@ export function AdminInstitutions() {
                     name={inst.name}
                     code={inst.institution_id}
                     location={`${inst.city || ''}${inst.state ? `, ${inst.state}` : ''}`}
-                    students={0} // These could be fetched with a count query
+                    students={0}
                     faculty={0}
                     status={inst.status as any}
                     type={inst.type}
                     logoUrl={inst.logo_url}
                     onClick={() => navigate(`/admin/institutions/${inst.institution_id}`)}
+                    onEdit={() => navigate(`/admin/add-institution?mode=edit&id=${inst.institution_id}`)}
+                    onUsers={() => navigate(`/admin/users?institution=${inst.institution_id}`)}
+                    onAnalytics={() => navigate(`/admin/analytics/${inst.institution_id}`)}
                   />
                 ))}
               </div>
@@ -157,6 +154,9 @@ export function AdminInstitutions() {
                     type={inst.type}
                     logoUrl={inst.logo_url}
                     onClick={() => navigate(`/admin/institutions/${inst.institution_id}`)}
+                    onEdit={() => navigate(`/admin/add-institution?mode=edit&id=${inst.institution_id}`)}
+                    onUsers={() => navigate(`/admin/users?institution=${inst.institution_id}`)}
+                    onAnalytics={() => navigate(`/admin/analytics/${inst.institution_id}`)}
                   />
                 ))}
               </div>

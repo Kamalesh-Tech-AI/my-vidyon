@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { useSearchParams } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Profile {
   id: string;
@@ -43,9 +44,8 @@ interface Profile {
 export function AdminUsers() {
   const [searchParams] = useSearchParams();
   const institutionFilter = searchParams.get('institution');
+  const queryClient = useQueryClient();
 
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,50 +57,44 @@ export function AdminUsers() {
     institution: ''
   });
 
-  const fetchUsers = async () => {
-    if (!isSupabaseConfigured()) {
-      setIsLoading(false);
-      return;
-    }
+  const { data: users = [], isLoading: isUsersLoading, refetch } = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isSupabaseConfigured()
+  });
 
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('updated_at', { ascending: false });
+  const { data: institutions = [] } = useQuery({
+    queryKey: ['admin-institutions-min'],
+    queryFn: async () => {
+      const { data } = await supabase.from('institutions').select('institution_id, name');
+      return data || [];
+    },
+    enabled: isSupabaseConfigured()
+  });
 
-    if (error) {
-      toast.error("Failed to fetch users: " + error.message);
-    } else {
-      setUsers(data || []);
-    }
-    setIsLoading(false);
-  };
+  const isLoading = isUsersLoading;
 
   useEffect(() => {
-    fetchUsers();
+    if (!isSupabaseConfigured()) return;
 
-    if (isSupabaseConfigured()) {
-      // Real-time subscription
-      const channel = supabase
-        .channel('public:profiles')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
-          console.log('Real-time update:', payload);
-          if (payload.eventType === 'INSERT') {
-            setUsers(prev => [payload.new as Profile, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            setUsers(prev => prev.map(u => u.id === payload.new.id ? payload.new as Profile : u));
-          } else if (payload.eventType === 'DELETE') {
-            setUsers(prev => prev.filter(u => u.id === payload.old.id));
-          }
-        })
-        .subscribe();
+    const channel = supabase
+      .channel('public:profiles_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      })
+      .subscribe();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -190,7 +184,7 @@ export function AdminUsers() {
         subtitle="Manage users across all institutions"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={fetchUsers} disabled={isLoading}>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
@@ -252,13 +246,23 @@ export function AdminUsers() {
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="institution" className="text-right">Institution</Label>
-                    <Input
-                      id="institution"
-                      value={newUser.institution}
-                      onChange={(e) => setNewUser({ ...newUser, institution: e.target.value })}
-                      className="col-span-3"
-                      placeholder="Institution ID"
-                    />
+                    <div className="col-span-3">
+                      <Select
+                        value={newUser.institution}
+                        onValueChange={(value) => setNewUser({ ...newUser, institution: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Institution" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {institutions.map(inst => (
+                            <SelectItem key={inst.institution_id} value={inst.institution_id}>
+                              {inst.name} ({inst.institution_id})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>

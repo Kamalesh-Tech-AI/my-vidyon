@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
@@ -8,6 +10,7 @@ import { AreaChart } from '@/components/charts/AreaChart';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/i18n/TranslationContext';
+import { supabase } from '@/lib/supabase';
 import {
   BookOpen,
   Clock,
@@ -16,6 +19,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 
+// Mock Data preserved for non-implemented tables
 const attendanceData = [
   { name: 'Mon', value: 95 },
   { name: 'Tue', value: 88 },
@@ -31,27 +35,91 @@ const gradeDistribution = [
   { name: 'C Grade', value: 1 },
 ];
 
-const enrolledSubjects = [
-  { title: 'Mathematics', code: 'Grade 10', instructor: 'Dr. Smith', progress: 75, students: 45, schedule: 'Mon, Wed 10:00 AM' },
-  { title: 'Chemistry', code: 'Grade 10', instructor: 'Mrs. Sharma', progress: 60, students: 52, schedule: 'Tue, Thu 2:00 PM' },
-  { title: 'English', code: 'Grade 10', instructor: 'Ms. Davis', progress: 85, students: 38, schedule: 'Mon, Fri 11:00 AM' },
-];
-
-const upcomingAssignments = [
-  { title: 'Algebra Homework', course: 'Mathematics', dueDate: 'Dec 22, 2025', status: 'pending' as const },
-  { title: 'Periodic Table Project', course: 'Chemistry', dueDate: 'Dec 20, 2025', status: 'submitted' as const },
-  { title: 'Poetry Analysis', course: 'English', dueDate: 'Dec 18, 2025', status: 'graded' as const, grade: '95', maxGrade: '100' },
-];
-
-const notifications = [
+const mockNotifications = [
   { title: 'Assignment Graded', message: 'Your Shakespeare Essay has been graded. You scored 95/100.', type: 'success' as const, time: '2 hours ago' },
   { title: 'New Material Uploaded', message: 'New study material for Mathematics have been uploaded.', type: 'info' as const, time: '5 hours ago' },
   { title: 'Exam Reminder', message: 'Your Unit Test - II for Mathematics is scheduled for next Monday.', type: 'warning' as const, time: '1 day ago' },
 ];
 
+const mockAssignments = [
+  { title: 'Algebra Homework', course: 'Mathematics', dueDate: 'Dec 22, 2025', status: 'pending' as const },
+  { title: 'Periodic Table Project', course: 'Chemistry', dueDate: 'Dec 20, 2025', status: 'submitted' as const },
+  { title: 'Poetry Analysis', course: 'English', dueDate: 'Dec 18, 2025', status: 'graded' as const, grade: '95', maxGrade: '100' },
+];
+
 export function StudentDashboard() {
   const { user } = useAuth();
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  // 1. Fetch Student Details (Class Info) -> Then Fetch Subjects
+  const { data: studentProfile } = useQuery({
+    queryKey: ['student-profile', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('students').select('*').eq('email', user?.email).single();
+      return data;
+    },
+    enabled: !!user?.email,
+    staleTime: Infinity,
+  });
+
+  // 2. Fetch Subjects (Real)
+  const { data: subjects = [] } = useQuery({
+    queryKey: ['student-subjects', studentProfile?.class_name],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('class_name', studentProfile?.class_name);
+
+      // Transform to CourseCard props
+      return (data || []).map((sub: any) => ({
+        title: sub.name,
+        code: sub.code || sub.class_name,
+        instructor: 'Not Assigned', // Need teacher relation
+        progress: 0,
+        students: 0,
+        schedule: 'TBD'
+      }));
+    },
+    enabled: !!studentProfile?.class_name,
+    staleTime: Infinity,
+  });
+
+  // 3. Mock Queries (Wrapped in useQuery for caching consistency)
+  const { data: assignments = mockAssignments } = useQuery({
+    queryKey: ['student-assignments'],
+    queryFn: () => Promise.resolve(mockAssignments),
+    staleTime: Infinity,
+  });
+
+  const { data: notifications = mockNotifications } = useQuery({
+    queryKey: ['student-notifications'],
+    queryFn: () => Promise.resolve(mockNotifications),
+    staleTime: Infinity,
+  });
+
+  // 4. Realtime Subscription
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const channel = supabase
+      .channel('student-dashboard-realtime')
+      // Listen for profile/class changes
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `email=eq.${user.email}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['student-profile'] });
+      })
+      // Listen for subject changes (if added to class)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['student-subjects'] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.email, queryClient]);
+
 
   return (
     <StudentLayout>
@@ -64,10 +132,10 @@ export function StudentDashboard() {
       <div className="stats-grid mb-6 sm:mb-8">
         <StatCard
           title="Subjects"
-          value={3}
+          value={subjects.length}
           icon={BookOpen}
           iconColor="text-student"
-          change="Academic Year 2025"
+          change="Enrolled Courses"
         />
         <StatCard
           title="Attendance Rate"
@@ -87,10 +155,10 @@ export function StudentDashboard() {
         />
         <StatCard
           title="Pending Tasks"
-          value={4}
+          value={assignments.filter(a => a.status === 'pending').length}
           icon={Clock}
           iconColor="text-warning"
-          change="2 due this week"
+          change="Due soon"
         />
       </div>
 
@@ -119,9 +187,11 @@ export function StudentDashboard() {
             <a href="/student/courses" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3 gap-3 sm:gap-4">
-            {enrolledSubjects.map((course) => (
+            {subjects.length > 0 ? subjects.map((course: any) => (
               <CourseCard key={course.code} {...course} />
-            ))}
+            )) : (
+              <p className="text-muted-foreground text-sm col-span-full">No subjects assigned yet.</p>
+            )}
           </div>
         </div>
 
@@ -164,7 +234,7 @@ export function StudentDashboard() {
               <a href="/student/assignments" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
             </div>
             <div className="space-y-2 sm:space-y-3">
-              {upcomingAssignments.map((assignment, index) => (
+              {assignments.map((assignment: any, index: number) => (
                 <AssignmentCard key={index} {...assignment} />
               ))}
             </div>
@@ -179,7 +249,7 @@ export function StudentDashboard() {
           <a href="/student/notifications" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {notifications.map((notification, index) => (
+          {notifications.map((notification: any, index: number) => (
             <NotificationCard key={index} {...notification} />
           ))}
         </div>

@@ -115,4 +115,46 @@ export class BulkUploadService {
         XLSX.utils.book_append_sheet(workbook, worksheet, "Credentials");
         XLSX.writeFile(workbook, filename);
     }
+
+    /**
+     * Generate and download a template file
+     */
+    static generateTemplate(type: 'student' | 'staff') {
+        let headers: any[] = [];
+        let filename = '';
+
+        if (type === 'student') {
+            headers = [{
+                name: 'John Doe',
+                register_number: 'STU001',
+                class_name: '10',
+                section: 'A',
+                dob: '2008-05-15',
+                gender: 'male',
+                parent_name: 'Richard Doe',
+                parent_contact: '1234567890',
+                email: 'john.doe@example.com',
+                address: '123 School St'
+            }];
+            filename = 'student-template.xlsx';
+        } else {
+            headers = [{
+                name: 'Jane Smith',
+                staff_id: 'STAFF001',
+                email: 'jane.smith@example.com',
+                phone: '9876543210',
+                role: 'teacher',
+                subject_assigned: 'Mathematics',
+                class_assigned: '10',
+                section_assigned: 'A',
+                dob: '1985-10-20'
+            }];
+            filename = 'staff-template.xlsx';
+        }
+
+        const worksheet = XLSX.utils.json_to_sheet(headers);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+        XLSX.writeFile(workbook, filename);
+    }
 }

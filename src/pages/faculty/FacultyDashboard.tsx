@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
@@ -7,6 +9,7 @@ import { Badge } from '@/components/common/Badge';
 import { BarChart } from '@/components/charts/BarChart';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase';
 import {
   Users,
   BookOpen,
@@ -18,6 +21,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+// Mock Data preserved for non-implemented tables
 const classPerformance = [
   { name: 'Mathematics', value: 78 },
   { name: 'Science', value: 82 },
@@ -25,13 +29,13 @@ const classPerformance = [
   { name: 'History', value: 72 },
 ];
 
-const assignedSubjects = [
+const mockAssignedSubjects = [
   { title: 'Mathematics', code: 'Grade 10', instructor: 'You', students: 45, schedule: 'Mon, Wed 10:00 AM', status: 'active' as const },
   { title: 'General Science', code: 'Grade 9', instructor: 'You', students: 52, schedule: 'Tue, Thu 2:00 PM', status: 'active' as const },
   { title: 'English Literature', code: 'Grade 10', instructor: 'You', students: 28, schedule: 'Wed, Fri 3:00 PM', status: 'active' as const },
 ];
 
-const pendingSubmissions = [
+const mockPendingSubmissions = [
   { id: 1, student: 'John Smith', assignment: 'Algebra Homework', course: 'Mathematics', submitted: '2 hours ago', status: 'pending' },
   { id: 2, student: 'Emily Johnson', assignment: 'Physics Lab Report', course: 'Science', submitted: '5 hours ago', status: 'pending' },
   { id: 3, student: 'Michael Brown', assignment: 'Shakespeare Essay', course: 'English', submitted: '1 day ago', status: 'pending' },
@@ -47,6 +51,52 @@ const todaySchedule = [
 export function FacultyDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // 1. Fetch Total Students in Institution (Real)
+  const { data: studentCount } = useQuery({
+    queryKey: ['faculty-total-students', user?.institutionId],
+    queryFn: async () => {
+      if (!user?.institutionId) return 0;
+      const { count } = await supabase
+        .from('students')
+        .select('*', { count: 'exact', head: true })
+        .eq('institution_id', user.institutionId);
+      return count || 0;
+    },
+    enabled: !!user?.institutionId,
+    staleTime: Infinity,
+  });
+
+  // 2. Mock Queries for Caching Architecture
+  const { data: assignedSubjects = mockAssignedSubjects } = useQuery({
+    queryKey: ['faculty-courses'],
+    queryFn: () => Promise.resolve(mockAssignedSubjects),
+    staleTime: Infinity,
+  });
+
+  const { data: pendingSubmissions = mockPendingSubmissions } = useQuery({
+    queryKey: ['faculty-submissions'],
+    queryFn: () => Promise.resolve(mockPendingSubmissions),
+    staleTime: Infinity,
+  });
+
+  // 3. Realtime Subscription
+  useEffect(() => {
+    if (!user?.institutionId) return;
+
+    const channel = supabase
+      .channel('faculty-dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${user.institutionId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['faculty-total-students'] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.institutionId, queryClient]);
+
 
   const handleCreateAssignment = () => {
     toast.success('Assignment creation form opened');
@@ -91,21 +141,21 @@ export function FacultyDashboard() {
       <div className="stats-grid mb-6 sm:mb-8">
         <StatCard
           title="Total Students"
-          value={125}
+          value={studentCount || 0}
           icon={Users}
           iconColor="text-faculty"
-          change="Across 3 courses"
+          change="Whole Institution"
         />
         <StatCard
           title="Active Courses"
-          value={3}
+          value={assignedSubjects.length}
           icon={BookOpen}
           iconColor="text-primary"
           change="Fall Semester 2025"
         />
         <StatCard
           title="Pending Reviews"
-          value={12}
+          value={pendingSubmissions.length}
           icon={FileText}
           iconColor="text-warning"
           change="4 due today"
@@ -177,3 +227,4 @@ export function FacultyDashboard() {
     </FacultyLayout>
   );
 }
+

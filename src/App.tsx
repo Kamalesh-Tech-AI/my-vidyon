@@ -89,19 +89,6 @@ import { InstitutionDetail } from "./pages/admin/InstitutionDetail";
 const queryClient = new QueryClient();
 
 const App = () => {
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return <Loader />;
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
       <TranslationProvider>

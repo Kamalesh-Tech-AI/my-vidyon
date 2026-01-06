@@ -1,12 +1,94 @@
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/layouts/AdminLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Bell, Lock, User } from 'lucide-react';
+import { Bell, Lock, User, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export function AdminSettings() {
+    const queryClient = useQueryClient();
+    const [formData, setFormData] = useState({ fullName: '' });
+
+    const { data: profile, isLoading: loading } = useQuery({
+        queryKey: ['admin-profile'],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("No user found");
+
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            if (error) throw error;
+            return data;
+        }
+    });
+
+    useEffect(() => {
+        if (profile) {
+            setFormData({ fullName: profile.full_name });
+        }
+    }, [profile]);
+
+    const updateProfileMutation = useMutation({
+        mutationFn: async (newName: string) => {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ full_name: newName })
+                .eq('id', profile.id);
+            if (error) throw error;
+            return newName;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin-profile'] });
+            toast.success("Profile updated successfully");
+        },
+        onError: (error: any) => {
+            toast.error("Failed to update profile: " + error.message);
+        }
+    });
+
+    useEffect(() => {
+        if (!profile?.id) return;
+
+        const channel = supabase
+            .channel('admin_profile_sync')
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles',
+                filter: `id=eq.${profile.id}`
+            }, () => {
+                queryClient.invalidateQueries({ queryKey: ['admin-profile'] });
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [profile?.id, queryClient]);
+
+    const handleUpdateProfile = () => {
+        updateProfileMutation.mutate(formData.fullName);
+    };
+
+    if (loading) {
+        return (
+            <AdminLayout>
+                <div className="flex h-[400px] items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+            </AdminLayout>
+        );
+    }
+
     return (
         <AdminLayout>
             <PageHeader
@@ -21,21 +103,23 @@ export function AdminSettings() {
                         <h3 className="font-semibold text-lg">Profile Information</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>First Name</Label>
-                            <Input defaultValue="System" />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Last Name</Label>
-                            <Input defaultValue="Admin" />
+                        <div className="space-y-2 md:col-span-2">
+                            <Label>Full Name</Label>
+                            <Input
+                                value={formData.fullName}
+                                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                            />
                         </div>
                         <div className="space-y-2 md:col-span-2">
                             <Label>Email Address</Label>
-                            <Input defaultValue="superadmin@erp.com" readOnly className="bg-muted" />
+                            <Input value={profile?.email} readOnly className="bg-muted" />
                         </div>
                     </div>
                     <div className="mt-4 flex justify-end">
-                        <Button>Update Profile</Button>
+                        <Button onClick={handleUpdateProfile} disabled={updateProfileMutation.isPending}>
+                            {updateProfileMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            Update Profile
+                        </Button>
                     </div>
                 </div>
 
@@ -47,7 +131,7 @@ export function AdminSettings() {
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <Label>Current Password</Label>
-                            <Input type="password" />
+                            <Input type="password" placeholder="••••••••" />
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">

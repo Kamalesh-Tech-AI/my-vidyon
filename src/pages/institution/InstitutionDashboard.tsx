@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { InstitutionLayout } from '@/layouts/InstitutionLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
@@ -7,6 +9,7 @@ import { AreaChart } from '@/components/charts/AreaChart';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { BarChart } from '@/components/charts/BarChart';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import {
   GraduationCap,
   Users,
@@ -16,6 +19,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 
+// --- MOCK DATA FOR CHARTS (Until we have historical tracking tables) ---
 const enrollmentTrend = [
   { name: 'Jan', value: 850 },
   { name: 'Feb', value: 920 },
@@ -25,14 +29,6 @@ const enrollmentTrend = [
   { name: 'Jun', value: 1320 },
 ];
 
-const classDistribution = [
-  { name: 'Grade 10', value: 250 },
-  { name: 'Grade 9', value: 280 },
-  { name: 'Grade 8', value: 220 },
-  { name: 'Grade 11', value: 180 },
-  { name: 'Grade 12', value: 150 },
-];
-
 const feeCollection = [
   { name: 'Jan', value: 1.2 },
   { name: 'Feb', value: 1.5 },
@@ -40,48 +36,92 @@ const feeCollection = [
   { name: 'Apr', value: 2.1 },
 ];
 
-const recentAdmissions = [
-  { id: 1, name: 'James Wilson', program: 'Grade 10-A', date: 'Dec 15, 2025', status: 'confirmed' },
-  { id: 2, name: 'Olivia Martinez', program: 'Grade 9-B', date: 'Dec 14, 2025', status: 'pending' },
-  { id: 3, name: 'William Anderson', program: 'Grade 8-C', date: 'Dec 14, 2025', status: 'confirmed' },
-  { id: 4, name: 'Sophia Thomas', program: 'Grade 11-A', date: 'Dec 13, 2025', status: 'documents' },
-  { id: 5, name: 'Benjamin Jackson', program: 'Grade 12-B', date: 'Dec 12, 2025', status: 'confirmed' },
-];
-
-const topPerformingDepts = [
-  { department: 'Science Stream', students: 420, faculty: 28, avgGPA: '88%', placement: '92%' },
-  { department: 'Mathematics', students: 380, faculty: 24, avgGPA: '85%', placement: '88%' },
-  { department: 'Commerce', students: 340, faculty: 22, avgGPA: '82%', placement: '85%' },
-  { department: 'Humanities', students: 310, faculty: 20, avgGPA: '84%', placement: '82%' },
-];
-
 export function InstitutionDashboard() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
+  // 1. Fetch Stats (Parallel)
+  const { data: stats } = useQuery({
+    queryKey: ['institution-stats', user?.institutionId],
+    queryFn: async () => {
+      if (!user?.institutionId) return { students: 0, teachers: 0, classes: 0 };
+
+      const [studentsReq, teachersReq, classesReq] = await Promise.all([
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('role', 'faculty'),
+        // Classes join via groups
+        supabase.from('classes').select('id, groups!inner(institution_id)', { count: 'exact', head: true }).eq('groups.institution_id', user.institutionId)
+      ]);
+
+      return {
+        students: studentsReq.count || 0,
+        teachers: teachersReq.count || 0,
+        classes: classesReq.count || 0,
+      };
+    },
+    enabled: !!user?.institutionId,
+    staleTime: Infinity, // Prevent buffering on revisit
+  });
+
+  // 2. Fetch Recent Admissions
+  const { data: recentAdmissions } = useQuery({
+    queryKey: ['recent-admissions', user?.institutionId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('students')
+        .select('*')
+        .eq('institution_id', user?.institutionId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      return data || [];
+    },
+    enabled: !!user?.institutionId,
+    staleTime: Infinity,
+  });
+
+  // 3. Compute Class Distribution (Simple Grouping from admissions for demo, ideal is aggregate query)
+  // For now using mock until we write the complex aggregation content
+  const classDistribution = [
+    { name: 'Grade 10', value: 25 },
+    { name: 'Grade 9', value: 28 },
+    { name: 'Grade 8', value: 22 },
+  ];
+
+  // 4. Realtime Subscription to auto-reload
+  useEffect(() => {
+    if (!user?.institutionId) return;
+
+    const channel = supabase
+      .channel('institution-dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${user.institutionId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['institution-stats'] });
+        queryClient.invalidateQueries({ queryKey: ['recent-admissions'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `institution_id=eq.${user.institutionId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['institution-stats'] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.institutionId, queryClient]);
+
+
+  // Columns Config
   const admissionColumns = [
     { key: 'name', header: 'Student Name' },
-    { key: 'program', header: 'Program' },
-    { key: 'date', header: 'Application Date' },
+    { key: 'class_name', header: 'Class' },
+    {
+      key: 'created_at',
+      header: 'Date',
+      render: (item: any) => new Date(item.created_at).toLocaleDateString()
+    },
     {
       key: 'status',
       header: 'Status',
-      render: (item: typeof recentAdmissions[0]) => {
-        const variants: Record<string, 'success' | 'warning' | 'info'> = {
-          confirmed: 'success',
-          pending: 'warning',
-          documents: 'info',
-        };
-        return <Badge variant={variants[item.status]}>{item.status.charAt(0).toUpperCase() + item.status.slice(1)}</Badge>;
-      },
+      render: () => <Badge variant="success">Enrolled</Badge>, // Defaulting for now
     },
-  ];
-
-  const deptColumns = [
-    { key: 'department', header: 'Subject/Stream' },
-    { key: 'students', header: 'Students' },
-    { key: 'faculty', header: 'Teachers' },
-    { key: 'avgGPA', header: 'Avg. Score' },
-    { key: 'placement', header: 'Pass Rate' },
   ];
 
   return (
@@ -95,25 +135,25 @@ export function InstitutionDashboard() {
       <div className="stats-grid mb-6 sm:mb-8">
         <StatCard
           title="Total Students"
-          value="2,450"
+          value={stats?.students || 0}
           icon={GraduationCap}
           iconColor="text-institution"
-          change="+180 this semester"
-          changeType="positive"
+          change="Real-time count"
+          changeType="neutral"
         />
         <StatCard
           title="Total Teachers"
-          value={125}
+          value={stats?.teachers || 0}
           icon={Users}
           iconColor="text-faculty"
-          change="+4 this month"
+          change="Active faculty"
         />
         <StatCard
           title="Total Classes"
-          value={45}
+          value={stats?.classes || 0}
           icon={Building}
           iconColor="text-institution"
-          change="Across all grades"
+          change="Across all groups"
         />
         <StatCard
           title="Revenue (YTD)"
@@ -150,9 +190,9 @@ export function InstitutionDashboard() {
               <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               <h3 className="font-semibold text-sm sm:text-base">Recent Admissions</h3>
             </div>
-            <a href="/institution/admissions" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
+            <a href="/institution/students" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
           </div>
-          <DataTable columns={admissionColumns} data={recentAdmissions} mobileCardView />
+          <DataTable columns={admissionColumns} data={recentAdmissions || []} mobileCardView />
         </div>
 
         {/* Fee Collection */}
@@ -167,15 +207,6 @@ export function InstitutionDashboard() {
             <BarChart data={feeCollection} color="hsl(var(--success))" height={250} />
           </div>
         </div>
-      </div>
-
-      {/* Department Performance */}
-      <div className="dashboard-card p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-3 sm:mb-4">
-          <h3 className="font-semibold text-sm sm:text-base">Department Performance</h3>
-          <a href="/institution/departments" className="text-xs sm:text-sm text-primary hover:underline">Manage Departments</a>
-        </div>
-        <DataTable columns={deptColumns} data={topPerformingDepts} mobileCardView />
       </div>
     </InstitutionLayout>
   );

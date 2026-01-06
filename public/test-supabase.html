@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Connection Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .log { background: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; margin-top: 10px; border: 1px solid #ddd; }
+        .error { color: #d32f2f; background: #ffebee; border-color: #ffcdd2; }
+        .success { color: #388e3c; background: #e8f5e9; border-color: #c8e6c9; }
+        button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; }
+        button:disabled { background: #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Supabase Connectivity Diagnostic</h1>
+    
+    <div>
+        <p><strong>Status:</strong> <span id="status">Ready to test</span></p>
+        <button onclick="runTest()" id="btn">Run Connection Test</button>
+    </div>
+
+    <div id="logs"></div>
+
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script>
+        // REPLACE THESE WITH YOUR VALUES IF NEEDED, OR IT WILL TRY TO READ FROM LOCAL STORAGE/GUESS
+        const SUPABASE_URL = 'https://ccyqzcaghwaggtmkmigi.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjeXF6Y2FnaHdhZ2d0bWttaWdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2ODUwMjgsImV4cCI6MjA4MzI2MTAyOH0.pJTXXaMH1FQC5ml7IWGI3DjOfIl0aAW4Xcgy5dhKSvE';
+
+        function log(msg, type = '') {
+            const div = document.createElement('div');
+            div.className = 'log ' + type;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            document.getElementById('logs').prepend(div);
+            console.log(msg);
+        }
+
+        async function runTest() {
+            const btn = document.getElementById('btn');
+            btn.disabled = true;
+            document.getElementById('logs').innerHTML = '';
+            
+            try {
+                log('Starting diagnostic...', 'info');
+                
+                // 1. Test Base URL Reachability
+                log(`1. Testing Reachability to ${SUPABASE_URL}...`);
+                try {
+                    const start = performance.now();
+                    const res = await fetch(SUPABASE_URL, { method: 'GET' });
+                    const time = Math.round(performance.now() - start);
+                    log(`✅ Base URL reachable in ${time}ms (Status: ${res.status})`, 'success');
+                } catch (e) {
+                    log(`❌ FATAL: Cannot reach base URL: ${e.message}`, 'error');
+                    throw e;
+                }
+
+                // 2. Test Auth Endpoint via Fetch (Raw)
+                log('2. Testing Auth Endpoint (Raw Fetch)...');
+                try {
+                    const startRaw = performance.now();
+                    // Just checking if we get a method not allowed or similar, proving connectivity
+                    const res = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
+                        method: 'GET',
+                        headers: {
+                            'apikey': SUPABASE_KEY
+                        }
+                    });
+                     const timeRaw = Math.round(performance.now() - startRaw);
+                    if (res.ok || res.status === 404) { // 404 is fine, means we hit the server
+                         log(`✅ Auth endpoint responding in ${timeRaw}ms (Status: ${res.status})`, 'success');
+                    } else {
+                        log(`⚠️ Auth endpoint returned status ${res.status}`, 'error');
+                    }
+                } catch (e) {
+                    log(`❌ Raw Auth request failed: ${e.message}`, 'error');
+                }
+
+                // 3. Test Supabase Client Library
+                log('3. Testing via supabase-js client...', 'info');
+                const { createClient } = window.supabase;
+                const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+                
+                const { data, error } = await client.auth.getSession();
+                if (error) {
+                    log(`❌ Supabase Client Error: ${error.message}`, 'error');
+                } else {
+                    log('✅ Supabase Client Initialized and Session Verified', 'success');
+                }
+
+                log('Diagnostic complete.', 'success');
+
+            } catch (err) {
+                log(`Diagnostic failed: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,37 +1,66 @@
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ParentLayout } from '@/layouts/ParentLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/i18n/TranslationContext';
 import { ChildCard } from '@/components/cards/ChildCard';
 import { Phone, Shield, School, User } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
-// Mock Data for Children
-const myChildren = [
-    {
-        id: 'STU001',
-        name: 'Vinoth',
-        grade: 'Class 12-A',
-        rollNo: '24',
-        attendance: 92,
-        performance: 'Excellent' as const,
-        teacherName: 'Mr. Raman',
-        teacherPhone: '+91 98765 11111'
-    },
-    {
-        id: 'STU002',
-        name: 'Sujatha',
-        grade: 'Class 9-B',
-        rollNo: '12',
-        attendance: 88,
-        performance: 'Good' as const,
-        teacherName: 'Mrs. Geetha',
-        teacherPhone: '+91 98765 22222'
-    }
-];
+// Helper to deduce performance mock based on nothing (random/demo)
+const getPerformance = () => ['Excellent', 'Good', 'Average'][Math.floor(Math.random() * 3)] as 'Excellent' | 'Good' | 'Average';
 
 export function ParentDashboard() {
     const { user } = useAuth();
     const { t } = useTranslation();
+    const queryClient = useQueryClient();
+
+    // 1. Fetch Children (Real)
+    const { data: myChildren = [] } = useQuery({
+        queryKey: ['parent-children', user?.email],
+        queryFn: async () => {
+            const { data } = await supabase
+                .from('students')
+                .select('*')
+                .eq('email', user?.email) // Fallback if parent_email not set, usually lookup by parent_email
+                .or(`parent_email.eq.${user?.email},email.eq.${user?.email}`);
+
+            return (data || []).map((child: any) => ({
+                id: child.id,
+                name: child.name,
+                grade: child.class_name || 'Not Assigned',
+                rollNo: child.register_number || 'N/A',
+                attendance: 85 + Math.floor(Math.random() * 10), // Mock attendance
+                performance: getPerformance(),
+                teacherName: 'Class Teacher', // Need relation
+                teacherPhone: '+91 90000 00000'
+            }));
+        },
+        enabled: !!user?.email,
+        staleTime: Infinity,
+    });
+
+    // 2. Realtime Subscription
+    useEffect(() => {
+        if (!user?.email) return;
+
+        const channel = supabase
+            .channel('parent-dashboard-realtime')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'students',
+                filter: `parent_email=eq.${user.email}`
+            }, () => {
+                queryClient.invalidateQueries({ queryKey: ['parent-children'] });
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user?.email, queryClient]);
 
     return (
         <ParentLayout>
@@ -41,9 +70,13 @@ export function ParentDashboard() {
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4 sm:mt-6 mb-8">
-                {myChildren.map((child) => (
+                {myChildren.length > 0 ? myChildren.map((child: any) => (
                     <ChildCard key={child.id} {...child} />
-                ))}
+                )) : (
+                    <p className="col-span-full text-center text-muted-foreground py-8">
+                        No students linked to this account yet.
+                    </p>
+                )}
             </div>
 
             {/* Emergency Contacts Section */}
@@ -80,7 +113,7 @@ export function ParentDashboard() {
                     </div>
 
                     {/* Class Teachers */}
-                    {myChildren.map((child) => (
+                    {myChildren.map((child: any) => (
                         <div key={child.id} className="bg-card rounded-lg border border-border p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
                             <div className="p-2.5 bg-green-100 dark:bg-green-900/20 rounded-full text-green-600 dark:text-green-400">
                                 <User className="w-5 h-5" />

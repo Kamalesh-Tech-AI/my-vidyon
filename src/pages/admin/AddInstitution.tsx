@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/layouts/AdminLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
     X,
     Loader2
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 interface Group {
     id: string;
@@ -107,9 +108,131 @@ export function AddInstitution() {
     const [institutionId, setInstitutionId] = useState(''); // School Code
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(isEditMode);
+
+    useEffect(() => {
+        if (isEditMode && editId) {
+            fetchInstitutionData();
+        }
+    }, [isEditMode, editId]);
+
+    const fetchInstitutionData = async () => {
+        try {
+            // 1. Fetch Institution
+            const { data: inst, error: instError } = await supabase
+                .from('institutions')
+                .select('*')
+                .eq('institution_id', editId)
+                .single();
+
+            if (instError) throw instError;
+
+            setInstitutionName(inst.name);
+            setInstitutionType(inst.type);
+            setAddress(inst.address);
+            setCity(inst.city);
+            setState(inst.state);
+            setContactEmail(inst.email);
+            setContactPhone(inst.phone);
+            setAcademicYear(inst.academic_year);
+            setLogoUrl(inst.logo_url);
+            setInstitutionStatus(inst.status);
+            setInstitutionId(inst.institution_id);
+
+            // 2. Fetch Groups & Classes
+            const { data: groupsData, error: groupsError } = await supabase
+                .from('groups')
+                .select(`
+                    id,
+                    name,
+                    classes (
+                        id,
+                        name,
+                        sections
+                    )
+                `)
+                .eq('institution_id', editId);
+
+            if (groupsError) throw groupsError;
+            setGroups(groupsData || []);
+
+            // 3. Fetch Subjects
+            const { data: subjectsData, error: subjectsError } = await supabase
+                .from('subjects')
+                .select('*')
+                .eq('institution_id', editId);
+
+            if (subjectsError) throw subjectsError;
+            setSubjects(subjectsData?.map(s => ({
+                id: s.id,
+                name: s.name,
+                code: s.code,
+                className: s.class_name,
+                group: s.group_name
+            })) || []);
+
+            // 4. Fetch Students
+            const { data: studentsData, error: studentsError } = await supabase
+                .from('students')
+                .select('*')
+                .eq('institution_id', editId);
+
+            if (studentsError) throw studentsError;
+            setStudents(studentsData?.map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                registerNumber: s.register_number,
+                class: s.class_name,
+                section: s.section,
+                dob: s.dob,
+                gender: s.gender,
+                parentName: s.parent_name,
+                parentContact: s.parent_contact,
+                email: s.email,
+                address: s.address
+            })) || []);
+
+            // 5. Fetch Staff
+            const { data: staffData, error: staffError } = await supabase
+                .from('staff_details')
+                .select(`
+                    id,
+                    staff_id,
+                    role,
+                    subject_assigned,
+                    class_assigned,
+                    section_assigned,
+                    profile:profiles (
+                        full_name,
+                        email
+                    )
+                `)
+                .eq('institution_id', editId);
+
+            if (staffError) throw staffError;
+            setStaff(staffData?.map((s: any) => ({
+                id: s.id,
+                name: s.profile?.full_name || '',
+                staffId: s.staff_id,
+                role: s.role,
+                subjectAssigned: s.subject_assigned,
+                classAssigned: s.class_assigned,
+                sectionAssigned: s.section_assigned,
+                email: s.profile?.email || '',
+                phone: '',
+                dob: ''
+            })) || []);
+
+        } catch (error: any) {
+            toast.error(`Error fetching data: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // Step 2: Groups & Classes
     const [groups, setGroups] = useState<Group[]>([]);
+    const [hasHigherSecondary, setHasHigherSecondary] = useState(false);
 
     // Step 3: Subjects
     const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -189,6 +312,62 @@ export function AddInstitution() {
                 : g
         ));
     };
+
+    const applyDefaultStructure = () => {
+        const defaultGroups: Group[] = [
+            {
+                id: 'primary',
+                name: 'Primary School (LKG - 5th)',
+                classes: [
+                    { id: 'lkg', name: 'LKG', sections: ['A'] },
+                    { id: 'ukg', name: 'UKG', sections: ['A'] },
+                    { id: 'c1', name: '1st', sections: ['A'] },
+                    { id: 'c2', name: '2nd', sections: ['A'] },
+                    { id: 'c3', name: '3rd', sections: ['A'] },
+                    { id: 'c4', name: '4th', sections: ['A'] },
+                    { id: 'c5', name: '5th', sections: ['A'] },
+                ]
+            },
+            {
+                id: 'middle',
+                name: 'Middle School (6th - 8th)',
+                classes: [
+                    { id: 'c6', name: '6th', sections: ['A'] },
+                    { id: 'c7', name: '7th', sections: ['A'] },
+                    { id: 'c8', name: '8th', sections: ['A'] },
+                ]
+            },
+            {
+                id: 'high',
+                name: 'High School (9th - 10th)',
+                classes: [
+                    { id: 'c9', name: '9th', sections: ['A'] },
+                    { id: 'c10', name: '10th', sections: ['A'] },
+                ]
+            }
+        ];
+
+        if (hasHigherSecondary) {
+            defaultGroups.push({
+                id: 'higher-secondary',
+                name: 'Higher Secondary (11th - 12th)',
+                classes: [
+                    { id: 'c11', name: '11th', sections: ['A'] },
+                    { id: 'c12', name: '12th', sections: ['A'] }
+                ]
+            });
+        }
+
+        if (groups.length > 0) {
+            if (!confirm('This will replace your current group structure. Continue?')) return;
+        }
+
+        setGroups(defaultGroups);
+        toast.success('Default school structure applied!');
+    };
+
+    const allAvailableClasses = groups.flatMap(g => g.classes.map(c => ({ ...c, groupName: g.name })));
+    const allAvailableSubjects = subjects.map(s => s.name);
 
     const addSubject = () => {
         setSubjects([...subjects, {
@@ -290,23 +469,31 @@ export function AddInstitution() {
                 uploadedLogoUrl = publicUrl;
             }
 
-            // 2. Create Institution
-            toast.loading('Step 2/6: Creating institution...', { id: loadingToast });
+            // 2. Create/Update Institution
+            toast.loading('Step 2/6: Saving institution details...', { id: loadingToast });
+            const institutionData: any = {
+                institution_id: institutionId,
+                name: institutionName,
+                type: institutionType,
+                address: address,
+                city: city,
+                state: state,
+                email: contactEmail,
+                phone: contactPhone,
+                academic_year: academicYear,
+                status: institutionStatus
+            };
+
+            if (uploadedLogoUrl) {
+                institutionData.logo_url = uploadedLogoUrl;
+            } else if (isEditMode && logoUrl) {
+                // Keep existing logoUrl
+                institutionData.logo_url = logoUrl;
+            }
+
             const { error: instError } = await supabase
                 .from('institutions')
-                .insert([{
-                    institution_id: institutionId,
-                    name: institutionName,
-                    type: institutionType,
-                    address: address,
-                    city: city,
-                    state: state,
-                    email: contactEmail,
-                    phone: contactPhone,
-                    academic_year: academicYear,
-                    logo_url: uploadedLogoUrl,
-                    status: institutionStatus
-                }]);
+                .upsert([institutionData], { onConflict: 'institution_id' });
 
             if (instError) throw new Error(`Failed to create institution: ${instError.message}`);
 
@@ -458,8 +645,7 @@ export function AddInstitution() {
     };
 
     const downloadTemplate = (type: 'student' | 'staff') => {
-        console.log(`Downloading ${type} template...`);
-        // Implementation for downloading Excel template
+        BulkUploadService.generateTemplate(type);
     };
 
     const renderStepContent = () => {
@@ -596,11 +782,30 @@ export function AddInstitution() {
             case 2:
                 return (
                     <div className="space-y-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold">Add Groups / Classes</h3>
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-muted/30 rounded-lg border border-border">
+                            <div className="space-y-1">
+                                <h4 className="font-medium text-sm">Quick Setup</h4>
+                                <p className="text-xs text-muted-foreground">Apply a standard school template to get started faster</p>
+                                <div className="flex items-center gap-3 mt-3">
+                                    <Switch
+                                        id="hs-toggle"
+                                        checked={hasHigherSecondary}
+                                        onCheckedChange={setHasHigherSecondary}
+                                    />
+                                    <Label htmlFor="hs-toggle" className="text-xs cursor-pointer select-none">Include Higher Secondary (11th & 12th)</Label>
+                                </div>
+                            </div>
+                            <Button onClick={applyDefaultStructure} variant="secondary" size="sm" className="shrink-0">
+                                <GraduationCap className="w-4 h-4 mr-2" />
+                                Apply Default Structure
+                            </Button>
+                        </div>
+
+                        <div className="flex items-center justify-between mb-4 mt-6">
+                            <h3 className="text-lg font-semibold">Groups & Classes</h3>
                             <Button onClick={addGroup} variant="outline" size="sm">
                                 <Plus className="w-4 h-4 mr-2" />
-                                Add Group
+                                Add Custom Group
                             </Button>
                         </div>
 
@@ -673,6 +878,21 @@ export function AddInstitution() {
                                                                     {section}
                                                                 </Button>
                                                             ))}
+                                                            <div className="flex gap-1 ml-2">
+                                                                <Input
+                                                                    placeholder="Extra section"
+                                                                    className="w-20 h-8 text-xs"
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const val = (e.target as HTMLInputElement).value.trim();
+                                                                            if (val && !classItem.sections.includes(val)) {
+                                                                                addSection(group.id, classItem.id, val);
+                                                                                (e.target as HTMLInputElement).value = '';
+                                                                            }
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <Button
@@ -731,19 +951,35 @@ export function AddInstitution() {
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Class</Label>
-                                                <Input
+                                                <Select
                                                     value={subject.className}
-                                                    onChange={(e) => updateSubject(subject.id, 'className', e.target.value)}
-                                                    placeholder="10"
-                                                />
+                                                    onValueChange={(value) => updateSubject(subject.id, 'className', value)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select Class" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {allAvailableClasses.map(c => (
+                                                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Group</Label>
-                                                <Input
+                                                <Select
                                                     value={subject.group}
-                                                    onChange={(e) => updateSubject(subject.id, 'group', e.target.value)}
-                                                    placeholder="High School"
-                                                />
+                                                    onValueChange={(value) => updateSubject(subject.id, 'group', value)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select Group" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {groups.map(g => (
+                                                            <SelectItem key={g.id} value={g.name}>{g.name}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
                                             </div>
                                             <Button
                                                 onClick={() => removeSubject(subject.id)}
@@ -812,16 +1048,33 @@ export function AddInstitution() {
                                                         onChange={(e) => updateStudent(student.id, 'registerNumber', e.target.value)}
                                                         placeholder="Register Number"
                                                     />
-                                                    <Input
+                                                    <Select
                                                         value={student.class}
-                                                        onChange={(e) => updateStudent(student.id, 'class', e.target.value)}
-                                                        placeholder="Class"
-                                                    />
-                                                    <Input
+                                                        onValueChange={(value) => updateStudent(student.id, 'class', value)}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Class" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {allAvailableClasses.map(c => (
+                                                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Select
                                                         value={student.section}
-                                                        onChange={(e) => updateStudent(student.id, 'section', e.target.value)}
-                                                        placeholder="Section"
-                                                    />
+                                                        onValueChange={(value) => updateStudent(student.id, 'section', value)}
+                                                        disabled={!student.class}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Section" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {allAvailableClasses.find(c => c.name === student.class)?.sections.map(s => (
+                                                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
                                                     <Input
                                                         type="date"
                                                         value={student.dob}
@@ -985,25 +1238,42 @@ export function AddInstitution() {
                                                             <SelectItem value="support">Support</SelectItem>
                                                         </SelectContent>
                                                     </Select>
-                                                    <Input
+                                                    <Select
                                                         value={staffMember.subjectAssigned}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'subjectAssigned', e.target.value)}
-                                                        placeholder="Subject Assigned"
-                                                    />
-                                                    <Input
+                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'subjectAssigned', value)}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Subject" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {subjects.map(s => (
+                                                                <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Select
                                                         value={staffMember.classAssigned}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'classAssigned', e.target.value)}
-                                                        placeholder="Class Assigned"
-                                                    />
+                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'classAssigned', value)}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Class" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {allAvailableClasses.map(c => (
+                                                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
                                                     <Select
                                                         value={staffMember.sectionAssigned}
                                                         onValueChange={(value) => updateStaffMember(staffMember.id, 'sectionAssigned', value)}
+                                                        disabled={!staffMember.classAssigned}
                                                     >
                                                         <SelectTrigger>
                                                             <SelectValue placeholder="Section" />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            {['A', 'B', 'C', 'D', 'E'].map(s => (
+                                                            {allAvailableClasses.find(c => c.name === staffMember.classAssigned)?.sections.map(s => (
                                                                 <SelectItem key={s} value={s}>{s}</SelectItem>
                                                             ))}
                                                         </SelectContent>
@@ -1215,7 +1485,14 @@ export function AddInstitution() {
 
             {/* Step Content */}
             <Card className="p-6 mb-6">
-                {renderStepContent()}
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                        <Loader2 className="w-12 h-12 animate-spin text-primary" />
+                        <p className="text-muted-foreground animate-pulse text-lg">Fetching institution data...</p>
+                    </div>
+                ) : (
+                    renderStepContent()
+                )}
             </Card>
 
             {/* Navigation Buttons */}
