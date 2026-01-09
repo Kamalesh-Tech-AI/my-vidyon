@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     }
 
     try {
-        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id } = await req.json()
+        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id, parent_email, parent_phone, parent_name } = await req.json()
 
         if (!email || !role || !institution_id) {
             throw new Error("Missing required fields: email, role, and institution_id are required.")
@@ -31,15 +31,27 @@ Deno.serve(async (req) => {
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
         // Determine password: use provided password or default to institution_id
-        const finalPassword = password || institution_id;
-        const forcePasswordChange = !password; // Force change if they didn't set one
+        // Helper to normalize role
+        const normalizeRole = (r: string) => {
+            const lower = r.toLowerCase();
+            return lower === 'teacher' ? 'faculty' : lower;
+        };
+
+        const finalRole = normalizeRole(role);
+
+        // Validate password length (Supabase requires 6 chars)
+        let finalPassword = password || institution_id;
+        if (finalPassword.length < 6) {
+            finalPassword = finalPassword.padEnd(6, '0'); // Pad with zeros if too short
+        }
+        const forcePasswordChange = !password;
 
         // 1. Create User in Auth
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email,
             password: finalPassword,
             user_metadata: {
-                role,
+                role: finalRole,
                 full_name,
                 institution_id,
                 force_password_change: forcePasswordChange
@@ -68,7 +80,7 @@ Deno.serve(async (req) => {
         }
 
         // 3. Role-specific table insertions
-        if (role === 'student') {
+        if (finalRole === 'student') {
             const { error: studentError } = await supabaseAdmin
                 .from('students')
                 .upsert({
@@ -76,10 +88,13 @@ Deno.serve(async (req) => {
                     name: full_name,
                     email: email,
                     institution_id: institution_id,
-                    register_number: register_number || `REG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+                    register_number: register_number || `REG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+                    parent_email: parent_email,
+                    parent_phone: parent_phone,
+                    parent_name: parent_name
                 });
             if (studentError) console.error("Error creating student record:", studentError);
-        } else if (role === 'parent') {
+        } else if (finalRole === 'parent') {
             const { data: parentData, error: parentError } = await supabaseAdmin
                 .from('parents')
                 .upsert({
@@ -104,13 +119,13 @@ Deno.serve(async (req) => {
                     });
                 if (linkError) console.error("Error linking parent to student:", linkError);
             }
-        } else if (role === 'faculty' || role === 'institution' || role === 'admin') {
+        } else if (finalRole === 'faculty' || finalRole === 'institution' || finalRole === 'admin') {
             const { error: staffError } = await supabaseAdmin
                 .from('staff_details')
                 .upsert({
                     profile_id: userId,
                     institution_id: institution_id,
-                    role: role,
+                    role: finalRole,
                     staff_id: staff_id || `STF-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
                 }, {
                     onConflict: 'profile_id'

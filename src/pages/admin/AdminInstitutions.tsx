@@ -8,6 +8,7 @@ import { Plus, Search, Filter, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 export function AdminInstitutions() {
   const navigate = useNavigate();
@@ -42,6 +43,23 @@ export function AdminInstitutions() {
 
   const handleAddInstitution = () => {
     navigate('/admin/add-institution');
+  };
+
+  const handleDeleteInstitution = async (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) {
+      try {
+        const { error } = await supabase
+          .from('institutions')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        toast.success('Institution deleted successfully');
+        queryClient.invalidateQueries({ queryKey: ['admin-institutions'] });
+      } catch (error: any) {
+        toast.error('Failed to delete institution: ' + error.message);
+      }
+    }
   };
 
   const filteredInstitutions = institutions.filter(inst =>
@@ -122,6 +140,7 @@ export function AdminInstitutions() {
                     onEdit={() => navigate(`/admin/add-institution?mode=edit&id=${inst.institution_id}`)}
                     onUsers={() => navigate(`/admin/users?institution=${inst.institution_id}`)}
                     onAnalytics={() => navigate(`/admin/analytics/${inst.institution_id}`)}
+                    onDelete={() => handleDeleteInstitution(inst.id, inst.name)}
                   />
                 ))}
               </div>
@@ -157,6 +176,7 @@ export function AdminInstitutions() {
                     onEdit={() => navigate(`/admin/add-institution?mode=edit&id=${inst.institution_id}`)}
                     onUsers={() => navigate(`/admin/users?institution=${inst.institution_id}`)}
                     onAnalytics={() => navigate(`/admin/analytics/${inst.institution_id}`)}
+                    onDelete={() => handleDeleteInstitution(inst.id, inst.name)}
                   />
                 ))}
               </div>

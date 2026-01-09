@@ -1,4 +1,4 @@
-import { Building2, Users, GraduationCap, MapPin, Layers, Eye, Edit, UserCog, BarChart3 } from 'lucide-react';
+import { Building2, Users, GraduationCap, MapPin, Layers, Eye, Edit, UserCog, BarChart3, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/ui/button';
 
@@ -18,6 +18,7 @@ interface InstitutionCardProps {
   onEdit?: () => void;
   onUsers?: () => void;
   onAnalytics?: () => void;
+  onDelete?: () => void;
 }
 
 export function InstitutionCard({
@@ -36,6 +37,7 @@ export function InstitutionCard({
   onEdit,
   onUsers,
   onAnalytics,
+  onDelete,
 }: InstitutionCardProps) {
   const statusVariant = {
     active: 'success',
@@ -159,6 +161,17 @@ export function InstitutionCard({
           <BarChart3 className="w-3 h-3 mr-1" />
           Analytics
         </Button>
+        {onDelete && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[10px] sm:text-xs min-h-[36px] sm:min-h-[32px] text-destructive hover:bg-destructive/10 border-destructive/20"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          >
+            <Trash2 className="w-3 h-3 mr-1" />
+            Delete
+          </Button>
+        )}
       </div>
     </div>
   );

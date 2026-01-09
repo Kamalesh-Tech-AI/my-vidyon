@@ -27,67 +27,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let detectedRole: UserRole | null = null;
       let institutionId: string | undefined = undefined;
 
-      // 1. Check if user is an Institution Admin
-      const { data: instData } = await supabase
-        .from('institutions')
-        .select('institution_id')
-        .eq('admin_email', email)
-        .single();
-
-      if (instData) {
-        detectedRole = 'institution';
-        institutionId = instData.institution_id;
-      }
-
-      // 2. Check if user is a Student
-      if (!detectedRole) {
-        const { data: studentData } = await supabase
-          .from('students')
-          .select('institution_id')
-          .eq('email', email)
-          .single();
-
-        if (studentData) {
-          detectedRole = 'student';
-          institutionId = studentData.institution_id;
-        }
-      }
-
-      // 3. Check if user is Staff/Faculty
-      if (!detectedRole) {
-        const { data: staffData } = await supabase
-          .from('staff_details')
-          .select('institution_id, role')
-          .eq('profile_id', userId)
-          .single();
-
-        if (staffData) {
-          detectedRole = staffData.role as UserRole;
-          institutionId = staffData.institution_id;
-        }
-      }
-
-      // 4. Check if user is a Parent
-      if (!detectedRole) {
-        const { data: parentData } = await supabase
-          .from('parents')
-          .select('institution_id')
-          .eq('email', email)
-          .single();
-
-        if (parentData) {
-          detectedRole = 'parent';
-          institutionId = parentData.institution_id;
-        }
-      }
-
-      // 4. Default to existing profile role if not found in specific tables (e.g. Super Admin)
-      const { data: profile, error: profileError } = await supabase
+      // 1. Initial Profile Fetch to check for Super Admin or basic info
+      const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
+      // If Super Admin, stay as admin
+      if (profile?.role === 'admin') {
+        detectedRole = 'admin';
+        institutionId = profile.institution_id;
+      }
+
+      if (!detectedRole) {
+        // Parallelize queries for efficiency across entity tables
+        const [instRes, studentRes, parentRes] = await Promise.all([
+          supabase.from('institutions').select('institution_id').eq('admin_email', email).maybeSingle(),
+          supabase.from('students').select('institution_id').eq('email', email).maybeSingle(),
+          supabase.from('parents').select('institution_id').eq('email', email).maybeSingle()
+        ]);
+
+        // 2. Check if user is an Institution Admin
+        if (instRes.data) {
+          detectedRole = 'institution';
+          institutionId = instRes.data.institution_id;
+        }
+
+        // 3. Check if user is a Student (Search by email)
+        if (!detectedRole && studentRes.data) {
+          detectedRole = 'student';
+          institutionId = studentRes.data.institution_id;
+        }
+
+        // 4. Check if user is a Parent (Search by email)
+        if (!detectedRole && parentRes.data) {
+          detectedRole = 'parent';
+          institutionId = parentRes.data.institution_id;
+        }
+
+        // 5. Check if user is Staff/Faculty (Search by profile_id)
+        if (!detectedRole) {
+          const { data: staffData } = await supabase
+            .from('staff_details')
+            .select('institution_id, role')
+            .eq('profile_id', userId)
+            .maybeSingle();
+
+          if (staffData) {
+            detectedRole = staffData.role as UserRole;
+            institutionId = staffData.institution_id;
+          }
+        }
+      }
+
+      // 6. Default to existing profile role if still not found
       if (!detectedRole && profile) {
         detectedRole = profile.role as UserRole;
         institutionId = profile.institution_id;
@@ -98,12 +92,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      // 5. Sync profile if role changed
+      // 6. Sync profile if role changed
       if (profile && profile.role !== detectedRole) {
         await supabase.from('profiles').update({ role: detectedRole, institution_id: institutionId }).eq('id', userId);
       }
 
-      // 6. Get user metadata from Auth (for force_password_change)
+      // 7. Get user metadata from Auth (for force_password_change)
       const { data: { user: authUser } } = await supabase.auth.getUser();
       const forcePasswordChange = authUser?.user_metadata?.force_password_change === true;
 
@@ -216,25 +210,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: credentials.password,
       });
 
-      // Network Diagnostic
-      try {
-        // Simple health check to see if we can reach the auth server
-        // Using a short timeout for the diagnostic
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), 5000);
-        const healthCheck = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/health`, {
-          signal: controller.signal
-        });
-        clearTimeout(id);
-        console.log('[AUTH] Diagnostic: Auth server reachable, status:', healthCheck.status);
-      } catch (netErr) {
-        console.error('[AUTH] Diagnostic: Network check failed:', netErr);
-        // We don't block execution here, but we alert the user if we know it failed
-        alert("Network Warning: Your browser cannot connect to the Supabase Authentication server. This may be due to a firewall, VPN, or ad-blocker.");
-      }
-
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Login request timed out after 60 seconds. Please check your internet connection.')), 60000)
+        setTimeout(() => reject(new Error('Login request timed out after 45 seconds. Please check your internet connection.')), 45000)
       );
 
       const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
@@ -271,7 +248,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('[AUTH] Login error:', error);
       setState(prev => ({ ...prev, isLoading: false }));
       const errorMessage = error.message || "An error occurred during login";
-      alert(`Login Error: ${errorMessage}`);
       toast.error(errorMessage);
       throw error;
     }

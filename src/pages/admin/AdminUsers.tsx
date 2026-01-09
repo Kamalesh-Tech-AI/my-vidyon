@@ -3,11 +3,12 @@ import { AdminLayout } from '@/layouts/AdminLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Users, GraduationCap, UserCog, UserPlus, Plus, Building2, Loader2 } from 'lucide-react';
+import { Users, GraduationCap, UserCog, UserPlus, Plus, Building2, Loader2, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { BulkUploadService } from '@/services/BulkUploadService';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,13 @@ export function AdminUsers() {
   const [selectedInstitution, setSelectedInstitution] = useState<Institution | null>(null);
   const [dialogType, setDialogType] = useState<DialogType>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Bulk Upload State
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkFileType, setBulkFileType] = useState<'student' | 'staff' | 'parent'>('student');
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   // Student form state
   const [studentData, setStudentData] = useState({
@@ -70,8 +78,23 @@ export function AdminUsers() {
     email: '',
     phone: '',
     password: '',
-    childName: '',
-    childEmail: '',
+    studentIds: [] as string[],
+  });
+
+  // Students list for dropdown
+  const { data: institutionStudents = [], isLoading: isStudentsLoading } = useQuery({
+    queryKey: ['institution-students', selectedInstitution?.institution_id],
+    queryFn: async () => {
+      if (!selectedInstitution) return [];
+      const { data, error } = await supabase
+        .from('students')
+        .select('id, name, email, register_number')
+        .eq('institution_id', selectedInstitution.institution_id)
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedInstitution && dialogType === 'parent'
   });
 
   const { data: institutions = [], isLoading } = useQuery({
@@ -101,7 +124,7 @@ export function AdminUsers() {
       parentName: '', parentEmail: '', parentPhone: '', email: '', address: '', password: ''
     });
     setStaffData({ name: '', staffId: '', role: '', email: '', phone: '', dob: '', password: '' });
-    setParentData({ name: '', email: '', phone: '', password: '', childName: '', childEmail: '' });
+    setParentData({ name: '', email: '', phone: '', password: '', studentIds: [] });
   };
 
   const handleAddStudent = async () => {
@@ -124,6 +147,9 @@ export function AdminUsers() {
           role: 'student',
           full_name: studentData.name,
           institution_id: selectedInstitution.institution_id,
+          parent_email: studentData.parentEmail,
+          parent_phone: studentData.parentPhone,
+          parent_name: studentData.parentName
         }
       });
 
@@ -140,6 +166,8 @@ export function AdminUsers() {
         gender: studentData.gender,
         parent_name: studentData.parentName,
         parent_contact: studentData.parentPhone,
+        parent_email: studentData.parentEmail,
+        parent_phone: studentData.parentPhone,
         email: studentData.email,
         address: studentData.address,
       });
@@ -199,7 +227,7 @@ export function AdminUsers() {
     if (!selectedInstitution) return;
 
     if (!parentData.name || !parentData.email || !parentData.phone ||
-      !parentData.password || !parentData.childName || !parentData.childEmail) {
+      !parentData.password || parentData.studentIds.length === 0) {
       toast.error('Please fill all mandatory fields');
       return;
     }
@@ -213,6 +241,9 @@ export function AdminUsers() {
           role: 'parent',
           full_name: parentData.name,
           institution_id: selectedInstitution.institution_id,
+          phone: parentData.phone,
+          student_id: parentData.studentIds[0], // Pass the first one for direct link, others can be linked if function updated
+          student_ids: parentData.studentIds // Added for future-proofing
         }
       });
 
@@ -228,11 +259,66 @@ export function AdminUsers() {
     }
   };
 
+  const handleBulkUpload = async () => {
+    if (!selectedInstitution || !bulkFile) {
+      toast.error("Please select an institution and a file.");
+      return;
+    }
+
+    setIsBulkUploading(true);
+    setUploadProgress({ current: 0, total: 0 });
+
+    try {
+      const parsedData = await BulkUploadService.parseExcel(bulkFile);
+
+      // Add roles based on selected type
+      const dataWithRoles = parsedData.map((row: any) => ({
+        ...row,
+        role: bulkFileType === 'staff' ? (row.role || 'faculty') : bulkFileType
+      }));
+
+      const results = await BulkUploadService.bulkCreateUsers(
+        dataWithRoles,
+        selectedInstitution.institution_id,
+        (current, total) => setUploadProgress({ current, total })
+      );
+
+      const successes = results.filter(r => r.status === 'success');
+      const errors = results.filter(r => r.status === 'error');
+
+      if (errors.length > 0) {
+        console.error("Bulk upload errors:", errors);
+        toast.error(`Completed with errors. Success: ${successes.length}, Failed: ${errors.length}. Downloading report...`);
+        BulkUploadService.downloadResults(results, `upload-report-${Date.now()}.xlsx`);
+      } else {
+        toast.success(`Successfully imported ${successes.length} users!`);
+        setShowBulkUpload(false);
+        setBulkFile(null);
+      }
+
+    } catch (error: any) {
+      toast.error("Bulk upload failed: " + error.message);
+    } finally {
+      setIsBulkUploading(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    BulkUploadService.generateTemplate(bulkFileType);
+  };
+
+
   return (
     <AdminLayout>
       <PageHeader
         title="User Management"
         subtitle="Add students, staff, and parents to institutions"
+        actions={
+          <Button onClick={() => setShowBulkUpload(true)} variant="outline" className="gap-2">
+            <Upload className="w-4 h-4" />
+            Bulk Import
+          </Button>
+        }
       />
 
       {isLoading ? (
@@ -587,24 +673,41 @@ export function AdminUsers() {
                 placeholder="Minimum 6 characters"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="child-name">Child Name *</Label>
-              <Input
-                id="child-name"
-                value={parentData.childName}
-                onChange={(e) => setParentData({ ...parentData, childName: e.target.value })}
-                placeholder="Student Name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="child-email">Child Email *</Label>
-              <Input
-                id="child-email"
-                type="email"
-                value={parentData.childEmail}
-                onChange={(e) => setParentData({ ...parentData, childEmail: e.target.value })}
-                placeholder="student@email.com"
-              />
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="children">Select Children *</Label>
+              <div className="grid grid-cols-1 gap-2 border rounded-lg p-3 max-h-40 overflow-y-auto bg-card">
+                {isStudentsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading students...
+                  </div>
+                ) : institutionStudents.length === 0 ? (
+                  <div className="text-sm text-muted-foreground italic">
+                    No students found in this institution
+                  </div>
+                ) : (
+                  institutionStudents.map((child) => (
+                    <div key={child.id} className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded-md transition-colors">
+                      <input
+                        type="checkbox"
+                        id={`child-${child.id}`}
+                        checked={parentData.studentIds.includes(child.id)}
+                        onChange={(e) => {
+                          const ids = e.target.checked
+                            ? [...parentData.studentIds, child.id]
+                            : parentData.studentIds.filter(id => id !== child.id);
+                          setParentData({ ...parentData, studentIds: ids });
+                        }}
+                        className="w-4 h-4 rounded border-input text-primary focus:ring-primary/20"
+                      />
+                      <Label htmlFor={`child-${child.id}`} className="flex flex-col cursor-pointer flex-1">
+                        <span className="font-medium text-sm">{child.name}</span>
+                        <span className="text-xs text-muted-foreground">{child.email} | {child.register_number}</span>
+                      </Label>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -612,6 +715,104 @@ export function AdminUsers() {
             <Button onClick={handleAddParent} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Add Parent
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showBulkUpload} onOpenChange={setShowBulkUpload}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bulk Import Users</DialogTitle>
+            <DialogDescription>
+              Upload an Excel file to bulk create users.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Select Institution</Label>
+              <Select
+                value={selectedInstitution?.institution_id || ''}
+                onValueChange={(v) => {
+                  const inst = institutions.find(i => i.institution_id === v);
+                  setSelectedInstitution(inst || null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Institution" />
+                </SelectTrigger>
+                <SelectContent>
+                  {institutions.map(inst => (
+                    <SelectItem key={inst.institution_id} value={inst.institution_id}>
+                      {inst.name} ({inst.institution_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>User Type</Label>
+              <Select
+                value={bulkFileType}
+                onValueChange={(v: any) => setBulkFileType(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="staff">Staff</SelectItem>
+                  <SelectItem value="parent">Parent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="p-4 border border-dashed rounded-lg bg-muted/20 text-center space-y-3">
+              <div className="flex justify-center">
+                <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p>1. Download the template</p>
+                <Button variant="link" size="sm" onClick={handleDownloadTemplate} className="h-auto p-0">
+                  Download {bulkFileType} template
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-file">Upload File</Label>
+              <Input
+                id="bulk-file"
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Supported formats: .xlsx, .xls, .csv
+              </p>
+            </div>
+
+            {isBulkUploading && (
+              <div className="space-y-1">
+                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(uploadProgress.current / (uploadProgress.total || 1)) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-center text-muted-foreground">
+                  Processing {uploadProgress.current} / {uploadProgress.total}...
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkUpload(false)}>Cancel</Button>
+            <Button onClick={handleBulkUpload} disabled={isBulkUploading || !bulkFile}>
+              {isBulkUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Upload & Process
             </Button>
           </DialogFooter>
         </DialogContent>

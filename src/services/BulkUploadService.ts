@@ -72,7 +72,7 @@ export class BulkUploadService {
                         body: {
                             email: user.email,
                             password: password,
-                            role: user.role,
+                            role: (user.role && user.role.toLowerCase() === 'teacher') ? 'faculty' : user.role,
                             full_name: user.full_name || user.name,
                             institution_id: institutionId,
                             register_number: user.register_number,
@@ -143,7 +143,7 @@ export class BulkUploadService {
     /**
      * Generate and download a template file
      */
-    static generateTemplate(type: 'student' | 'staff') {
+    static generateTemplate(type: 'student' | 'staff' | 'parent') {
         let headers: any[] = [];
         let filename = '';
 
@@ -179,7 +179,7 @@ export class BulkUploadService {
                 }
             ];
             filename = 'student-template.xlsx';
-        } else {
+        } else if (type === 'staff') {
             headers = [
                 {
                     name: 'Jane Smith',
@@ -207,6 +207,26 @@ export class BulkUploadService {
                 }
             ];
             filename = 'staff-template.xlsx';
+        } else {
+            headers = [
+                {
+                    full_name: 'Robert Smith',
+                    email: 'robert.smith@example.com',
+                    phone: '9876543210',
+                    role: 'parent',
+                    student_email: 'sarah.s@example.com', // Link to child via email
+                    password: 'password123'
+                },
+                {
+                    full_name: 'Richard Doe',
+                    email: 'richard.doe@example.com',
+                    phone: '1234567890',
+                    role: 'parent',
+                    student_email: 'john.doe@example.com',
+                    password: 'password456'
+                }
+            ];
+            filename = 'parent-template.xlsx';
         }
 
         const worksheet = XLSX.utils.json_to_sheet(headers);

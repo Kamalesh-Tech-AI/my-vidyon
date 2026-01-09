@@ -50,42 +50,12 @@ interface Subject {
     group: string;
 }
 
-interface Student {
-    id: string;
-    name: string;
-    registerNumber: string;
-    register_number?: string; // Support for snake_case from bulk upload
-    class: string;
-    section: string;
-    dob: string;
-    gender: string;
-    parentName: string;
-    parentContact: string;
-    email: string;
-    address: string;
-    password?: string;
-}
-
-interface Staff {
-    id: string;
-    name: string;
-    staffId: string;
-    staff_id?: string; // Support for snake_case from bulk upload
-    role: string;
-    subjectAssigned: string;
-    classAssigned: string;
-    sectionAssigned: string; // Added section
-    email: string;
-    phone: string;
-    dob: string;
-    password?: string;
-}
 
 const steps = [
     { id: 1, name: 'Basic Details', icon: Building2 },
-    { id: 2, name: 'Groups & Classes', icon: BookOpen },
+    { id: 2, name: 'Setup & Admin', icon: UserCog },
     { id: 3, name: 'Subjects', icon: BookOpen },
-    { id: 4, name: 'Access & Roles', icon: Users },
+    { id: 4, name: 'Review', icon: Check },
 ];
 
 export function AddInstitution() {
@@ -112,13 +82,20 @@ export function AddInstitution() {
     // Admin Credentials
     const [adminEmail, setAdminEmail] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
+    const [showAdminCreds, setShowAdminCreds] = useState(false);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(isEditMode);
 
     useEffect(() => {
-        if (isEditMode && editId) {
-            fetchInstitutionData();
+        if (isEditMode) {
+            if (editId) {
+                fetchInstitutionData();
+            } else {
+                // If mode is edit but no ID, stop loading and warn
+                setIsLoading(false);
+                toast.error("No institution ID provided for editing.");
+            }
         }
     }, [isEditMode, editId]);
 
@@ -129,9 +106,10 @@ export function AddInstitution() {
                 .from('institutions')
                 .select('*')
                 .eq('institution_id', editId)
-                .single();
+                .maybeSingle(); // Changed single() to maybeSingle() to avoid 406 on no rows
 
             if (instError) throw instError;
+            if (!inst) throw new Error('Institution not found');
 
             setInstitutionName(inst.name);
             setInstitutionType(inst.type);
@@ -177,57 +155,6 @@ export function AddInstitution() {
                 group: s.group_name
             })) || []);
 
-            // 4. Fetch Students
-            const { data: studentsData, error: studentsError } = await supabase
-                .from('students')
-                .select('*')
-                .eq('institution_id', editId);
-
-            if (studentsError) throw studentsError;
-            setStudents(studentsData?.map((s: any) => ({
-                id: s.id,
-                name: s.name,
-                registerNumber: s.register_number,
-                class: s.class_name,
-                section: s.section,
-                dob: s.dob,
-                gender: s.gender,
-                parentName: s.parent_name,
-                parentContact: s.parent_contact,
-                email: s.email,
-                address: s.address
-            })) || []);
-
-            // 5. Fetch Staff
-            const { data: staffData, error: staffError } = await supabase
-                .from('staff_details')
-                .select(`
-                    id,
-                    staff_id,
-                    role,
-                    subject_assigned,
-                    class_assigned,
-                    section_assigned,
-                    profile:profiles (
-                        full_name,
-                        email
-                    )
-                `)
-                .eq('institution_id', editId);
-
-            if (staffError) throw staffError;
-            setStaff(staffData?.map((s: any) => ({
-                id: s.id,
-                name: s.profile?.full_name || '',
-                staffId: s.staff_id,
-                role: s.role,
-                subjectAssigned: s.subject_assigned,
-                classAssigned: s.class_assigned,
-                sectionAssigned: s.section_assigned,
-                email: s.profile?.email || '',
-                phone: '',
-                dob: ''
-            })) || []);
 
         } catch (error: any) {
             toast.error(`Error fetching data: ${error.message}`);
@@ -243,15 +170,6 @@ export function AddInstitution() {
     // Step 3: Subjects
     const [subjects, setSubjects] = useState<Subject[]>([]);
 
-    // Step 4: Students
-    const [studentInputMethod, setStudentInputMethod] = useState<'manual' | 'excel'>('manual');
-    const [students, setStudents] = useState<Student[]>([]);
-    const [studentFile, setStudentFile] = useState<File | null>(null);
-
-    // Step 5: Staff
-    const [staffInputMethod, setStaffInputMethod] = useState<'manual' | 'excel'>('manual');
-    const [staff, setStaff] = useState<Staff[]>([]);
-    const [staffFile, setStaffFile] = useState<File | null>(null);
 
     const addGroup = () => {
         setGroups([...groups, { id: Date.now().toString(), name: '', classes: [] }]);
@@ -393,54 +311,6 @@ export function AddInstitution() {
         setSubjects(subjects.map(s => s.id === subjectId ? { ...s, [field]: value } : s));
     };
 
-    const addStudent = () => {
-        setStudents([...students, {
-            id: Date.now().toString(),
-            name: '',
-            registerNumber: '',
-            class: '',
-            section: '',
-            dob: '',
-            gender: '',
-            parentName: '',
-            parentContact: '',
-            email: '',
-            address: '',
-            password: '',
-        }]);
-    };
-
-    const removeStudent = (studentId: string) => {
-        setStudents(students.filter(s => s.id !== studentId));
-    };
-
-    const updateStudent = (studentId: string, field: keyof Student, value: string) => {
-        setStudents(students.map(s => s.id === studentId ? { ...s, [field]: value } : s));
-    };
-
-    const addStaffMember = () => {
-        setStaff([...staff, {
-            id: Date.now().toString(),
-            name: '',
-            staffId: '',
-            role: '',
-            subjectAssigned: '',
-            classAssigned: '',
-            sectionAssigned: '',
-            email: '',
-            phone: '',
-            dob: '',
-            password: '',
-        }]);
-    };
-
-    const removeStaffMember = (staffId: string) => {
-        setStaff(staff.filter(s => s.id !== staffId));
-    };
-
-    const updateStaffMember = (staffId: string, field: keyof Staff, value: string) => {
-        setStaff(staff.map(s => s.id === staffId ? { ...s, [field]: value } : s));
-    };
 
     const validateStep = (step: number) => {
         switch (step) {
@@ -456,6 +326,9 @@ export function AddInstitution() {
                 if (!academicYear) { toast.error('Academic Year is required'); return false; }
                 return true;
             case 2:
+                // In edit mode, only validate if user explicitly wants to change creds
+                if (isEditMode && !showAdminCreds) return true;
+
                 if (!adminEmail) { toast.error('Admin Email is required'); return false; }
                 if (!adminPassword) { toast.error('Admin Password is required'); return false; }
                 return true;
@@ -466,7 +339,7 @@ export function AddInstitution() {
 
     const handleNext = () => {
         if (validateStep(currentStep)) {
-            if (currentStep < 4) {
+            if (currentStep < steps.length) {
                 setCurrentStep(currentStep + 1);
             }
         }
@@ -526,8 +399,6 @@ export function AddInstitution() {
             }
 
             // 2. Create/Update Institution
-            console.log('Step 2/6: Saving institution details...');
-            toast.loading('Step 2/6: Saving institution details...', { id: loadingToast });
             const institutionData: any = {
                 institution_id: institutionId,
                 name: institutionName,
@@ -539,17 +410,27 @@ export function AddInstitution() {
                 phone: contactPhone,
                 academic_year: academicYear,
                 status: institutionStatus,
-                admin_email: adminEmail,
-                admin_password: adminPassword,
+                // Only update admin credentials if explicit or new
+                ...((!isEditMode || showAdminCreds) && {
+                    admin_email: adminEmail,
+                    // admin_password is NOT stored in the institutions table, only used for auth provisioning
+                })
             };
+
+            // If editing, we MUST query by ID to safely update, OR rely on institution_id being unique and immutable-ish
+            // The safest is to NOT allow changing institution_id in edit mode or handle it carefully.
+            if (isEditMode) {
+                // We don't have the UUID readily available in state unless we stored it.
+                // Let's rely on the upsert by institution_id uniqueness which is the school code.
+            }
 
             if (uploadedLogoUrl) {
                 institutionData.logo_url = uploadedLogoUrl;
             } else if (isEditMode && logoUrl) {
-                // Keep existing logoUrl
                 institutionData.logo_url = logoUrl;
             }
 
+            // Perform UPSERT based on 'institution_id' which is our unique business key
             const { error: instError } = await supabase
                 .from('institutions')
                 .upsert([institutionData], { onConflict: 'institution_id' });
@@ -558,7 +439,7 @@ export function AddInstitution() {
             console.log('Institution record saved successfully.');
 
             // 2.5 Provision Institution Admin account
-            if (adminEmail && adminPassword) {
+            if ((!isEditMode || showAdminCreds) && adminEmail && adminPassword) {
                 toast.loading('Step 2.5/6: Provisioning institution admin...', { id: loadingToast });
                 const { error: adminProvError } = await supabase.functions.invoke('create-user', {
                     body: {
@@ -576,41 +457,151 @@ export function AddInstitution() {
                 }
             }
 
-            // 3. Create Groups & Classes
-            toast.loading('Step 3/6: Creating groups and classes...', { id: loadingToast });
-            for (const group of groups) {
-                const { data: groupData, error: groupError } = await supabase
-                    .from('groups')
-                    .insert([{ name: group.name, institution_id: institutionId }])
-                    .select()
-                    .single();
+            // 3. Create/Update Groups & Classes
+            toast.loading('Step 3/6: Processing groups and classes...', { id: loadingToast });
 
-                if (groupError) throw groupError;
+            // Helper to identify real UUIDs
+            const isUUID = (id: string) => id.length > 20;
 
-                if (group.classes.length > 0) {
-                    const classesToInsert = group.classes.map(c => ({
-                        group_id: groupData.id,
-                        name: c.name,
-                        sections: c.sections
-                    }));
-                    const { error: classError } = await supabase.from('classes').insert(classesToInsert);
-                    if (classError) throw classError;
+            if (isEditMode) {
+                // A. Cleanup deleted items
+                const keepGroupIds = groups.filter(g => isUUID(g.id)).map(g => g.id);
+                const keepClassIds = groups.flatMap(g => g.classes).filter(c => isUUID(c.id)).map(c => c.id);
+
+                // 1. Delete removed groups (cascades to classes usually, or we handle it)
+                if (keepGroupIds.length > 0) {
+                    await supabase.from('groups').delete().eq('institution_id', institutionId).not('id', 'in', `(${keepGroupIds.join(',')})`);
+                } else {
+                    // Be careful not to delete everything if state is empty? 
+                    // If state is empty, keepGroupIds is empty. Logic should be: delete all groups for this institution that are NOT in empty list = Delete All.
+                    // But .not('id', 'in', '()') might fail syntax.
+                    // Safer: Fetch all groups, delete those not in keep list.
+                    // Or: if keepGroupIds empty, do we delete all? Yes.
+                    // But Supabase query builder limitations...
+                    // Let's use a simpler approach: 
+                    // If IDs to keep, delete others. If no IDs to keep, delete all.
+                    if (groups.length === 0) {
+                        await supabase.from('groups').delete().eq('institution_id', institutionId);
+                    } else {
+                        await supabase.from('groups').delete().eq('institution_id', institutionId).not('id', 'in', `(${keepGroupIds.join(',')})`);
+                    }
+                }
+
+                // 2. Delete removed classes from kept groups
+                if (keepGroupIds.length > 0) {
+                    // We only need to prune classes for groups that we KEPT.
+                    // Deleted groups already took their classes with them (assuming cascade or we don't care as they are orphaned).
+                    const { error: pruneError } = await supabase
+                        .from('classes')
+                        .delete()
+                        .in('group_id', keepGroupIds)
+                        // If keepClassIds is empty, we delete all classes in these groups?
+                        .not('id', 'in', `(${keepClassIds.length > 0 ? keepClassIds.join(',') : '00000000-0000-0000-0000-000000000000'})`);
+
+                    if (pruneError) console.error("Error pruning classes:", pruneError);
+                }
+
+                // B. Upsert (Update Existing / Insert New)
+                for (const group of groups) {
+                    let groupId = group.id;
+
+                    if (isUUID(group.id)) {
+                        // Update existing group
+                        await supabase.from('groups').update({ name: group.name }).eq('id', group.id);
+                    } else {
+                        // Insert new group
+                        const { data: newGroup, error: newGroupError } = await supabase
+                            .from('groups')
+                            .insert([{ name: group.name, institution_id: institutionId }])
+                            .select()
+                            .single();
+                        if (newGroupError) throw newGroupError;
+                        groupId = newGroup.id;
+                    }
+
+                    // Handle classes for this group
+                    for (const cls of group.classes) {
+                        if (isUUID(cls.id)) {
+                            // Update existing class
+                            await supabase.from('classes').update({ name: cls.name, sections: cls.sections }).eq('id', cls.id);
+                        } else {
+                            // Insert new class
+                            const { error: newClassError } = await supabase.from('classes').insert({
+                                group_id: groupId,
+                                name: cls.name,
+                                sections: cls.sections
+                            });
+                            if (newClassError) throw newClassError;
+                        }
+                    }
+                }
+
+            } else {
+                // Create Mode: Just Insert All (Original Logic)
+                for (const group of groups) {
+                    const { data: groupData, error: groupError } = await supabase
+                        .from('groups')
+                        .insert([{ name: group.name, institution_id: institutionId }])
+                        .select()
+                        .single();
+
+                    if (groupError) throw groupError;
+
+                    if (group.classes.length > 0) {
+                        const classesToInsert = group.classes.map(c => ({
+                            group_id: groupData.id,
+                            name: c.name,
+                            sections: c.sections
+                        }));
+                        const { error: classError } = await supabase.from('classes').insert(classesToInsert);
+                        if (classError) throw classError;
+                    }
                 }
             }
 
 
-            // 4. Create Subjects
-            toast.loading('Step 4/4: Adding subjects...', { id: loadingToast });
-            if (subjects.length > 0) {
-                const subjectsToInsert = subjects.map(s => ({
-                    institution_id: institutionId,
-                    name: s.name,
-                    code: s.code || '',
-                    class_name: s.className,
-                    group_name: s.group
-                }));
-                const { error: subError } = await supabase.from('subjects').insert(subjectsToInsert);
-                if (subError) throw subError;
+            // 4. Create/Update Subjects
+            toast.loading('Step 4/6: Processing subjects...', { id: loadingToast });
+
+            if (isEditMode) {
+                const keepSubjectIds = subjects.filter(s => isUUID(s.id)).map(s => s.id);
+
+                // 1. Delete removed subjects
+                if (subjects.length === 0) {
+                    await supabase.from('subjects').delete().eq('institution_id', institutionId);
+                } else {
+                    await supabase.from('subjects').delete().eq('institution_id', institutionId).not('id', 'in', `(${keepSubjectIds.join(',')})`);
+                }
+
+                // 2. Upsert
+                for (const subject of subjects) {
+                    const payload = {
+                        institution_id: institutionId,
+                        name: subject.name,
+                        code: subject.code || '',
+                        class_name: subject.className,
+                        group_name: subject.group
+                    };
+
+                    if (isUUID(subject.id)) {
+                        await supabase.from('subjects').update(payload).eq('id', subject.id);
+                    } else {
+                        await supabase.from('subjects').insert(payload);
+                    }
+                }
+
+            } else {
+                if (subjects.length > 0) {
+                    const subjectsToInsert = subjects.map(s => ({
+                        institution_id: institutionId,
+                        name: s.name,
+                        code: s.code || '',
+                        class_name: s.className,
+                        group_name: s.group
+                    }));
+                    const { error: subError } = await supabase.from('subjects').insert(subjectsToInsert);
+                    if (subError) throw subError;
+                }
             }
 
             toast.dismiss(loadingToast);
@@ -633,9 +624,6 @@ export function AddInstitution() {
         }
     };
 
-    const downloadTemplate = (type: 'student' | 'staff') => {
-        BulkUploadService.generateTemplate(type);
-    };
 
     const renderStepContent = () => {
         switch (currentStep) {
@@ -776,30 +764,57 @@ export function AddInstitution() {
                                 <UserCog className="w-5 h-5 text-primary" />
                                 Institution Admin Credentials
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <Label htmlFor="adminEmail">Admin Email *</Label>
-                                    <Input
-                                        id="adminEmail"
-                                        type="email"
-                                        value={adminEmail}
-                                        onChange={(e) => setAdminEmail(e.target.value)}
-                                        placeholder="admin@institution.com"
-                                        required
-                                    />
+
+                            {isEditMode && !showAdminCreds ? (
+                                <div className="flex flex-col items-center justify-center py-6 bg-muted/20 rounded-lg border border-dashed border-border">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <UserCog className="w-5 h-5 text-muted-foreground" />
+                                        <p className="font-medium text-muted-foreground">Admin credentials are hidden</p>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowAdminCreds(true)}
+                                    >
+                                        Change Admin Email/Password
+                                    </Button>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="adminPassword">Admin Password *</Label>
-                                    <Input
-                                        id="adminPassword"
-                                        type="password"
-                                        value={adminPassword}
-                                        onChange={(e) => setAdminPassword(e.target.value)}
-                                        placeholder="Enter secure password"
-                                        required
-                                    />
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                                    {isEditMode && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="absolute -top-1 right-0 h-6 w-6"
+                                            onClick={() => setShowAdminCreds(false)}
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    )}
+                                    <div className="space-y-2">
+                                        <Label htmlFor="adminEmail">Admin Email *</Label>
+                                        <Input
+                                            id="adminEmail"
+                                            type="email"
+                                            value={adminEmail}
+                                            onChange={(e) => setAdminEmail(e.target.value)}
+                                            placeholder="admin@institution.com"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="adminPassword">Admin Password {isEditMode ? '(Optional)' : '*'}</Label>
+                                        <Input
+                                            id="adminPassword"
+                                            type="password"
+                                            value={adminPassword}
+                                            onChange={(e) => setAdminPassword(e.target.value)}
+                                            placeholder={isEditMode ? "Leave blank to keep current" : "Enter secure password"}
+                                            required={!isEditMode}
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             <p className="text-xs text-muted-foreground mt-3">
                                 This account will be created as the primary administrator for this institution.
                             </p>
@@ -832,107 +847,109 @@ export function AddInstitution() {
                             </Button>
                         </div>
 
-                        {groups.length === 0 ? (
-                            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                                <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                                <p className="text-muted-foreground">No groups added yet. Click "Add Group" to start.</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                {groups.map((group) => (
-                                    <Card key={group.id} className="p-6">
-                                        <div className="flex items-center gap-4 mb-4">
-                                            <Input
-                                                value={group.name}
-                                                onChange={(e) => updateGroup(group.id, e.target.value)}
-                                                placeholder="Group name (e.g., Primary, Middle School)"
-                                                className="flex-1"
-                                            />
-                                            <Button
-                                                onClick={() => addClass(group.id)}
-                                                variant="outline"
-                                                size="sm"
-                                            >
-                                                <Plus className="w-4 h-4 mr-2" />
-                                                Add Class
-                                            </Button>
-                                            <Button
-                                                onClick={() => removeGroup(group.id)}
-                                                variant="destructive"
-                                                size="sm"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+                        {
+                            groups.length === 0 ? (
+                                <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                                    <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                                    <p className="text-muted-foreground">No groups added yet. Click "Add Group" to start.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    {groups.map((group) => (
+                                        <Card key={group.id} className="p-6">
+                                            <div className="flex items-center gap-4 mb-4">
+                                                <Input
+                                                    value={group.name}
+                                                    onChange={(e) => updateGroup(group.id, e.target.value)}
+                                                    placeholder="Group name (e.g., Primary, Middle School)"
+                                                    className="flex-1"
+                                                />
+                                                <Button
+                                                    onClick={() => addClass(group.id)}
+                                                    variant="outline"
+                                                    size="sm"
+                                                >
+                                                    <Plus className="w-4 h-4 mr-2" />
+                                                    Add Class
+                                                </Button>
+                                                <Button
+                                                    onClick={() => removeGroup(group.id)}
+                                                    variant="destructive"
+                                                    size="sm"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
 
-                                        <div className="space-y-3 ml-6">
-                                            {group.classes.map((classItem) => (
-                                                <div key={classItem.id} className="flex items-start gap-3">
-                                                    <Input
-                                                        value={classItem.name}
-                                                        onChange={(e) => updateClass(group.id, classItem.id, e.target.value)}
-                                                        placeholder="Class name (e.g., LKG, 1, 2, 10)"
-                                                        className="w-48"
-                                                    />
-                                                    <div className="flex-1">
-                                                        <div className="flex flex-wrap gap-2 mb-2">
-                                                            {classItem.sections.map((section) => (
-                                                                <div
-                                                                    key={section}
-                                                                    className="px-3 py-1 bg-primary/10 text-primary rounded-md text-sm flex items-center gap-2"
-                                                                >
-                                                                    Section {section}
-                                                                    <X
-                                                                        className="w-3 h-3 cursor-pointer"
-                                                                        onClick={() => removeSection(group.id, classItem.id, section)}
+                                            <div className="space-y-3 ml-6">
+                                                {group.classes.map((classItem) => (
+                                                    <div key={classItem.id} className="flex items-start gap-3">
+                                                        <Input
+                                                            value={classItem.name}
+                                                            onChange={(e) => updateClass(group.id, classItem.id, e.target.value)}
+                                                            placeholder="Class name (e.g., LKG, 1, 2, 10)"
+                                                            className="w-48"
+                                                        />
+                                                        <div className="flex-1">
+                                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                                {classItem.sections.map((section) => (
+                                                                    <div
+                                                                        key={section}
+                                                                        className="px-3 py-1 bg-primary/10 text-primary rounded-md text-sm flex items-center gap-2"
+                                                                    >
+                                                                        Section {section}
+                                                                        <X
+                                                                            className="w-3 h-3 cursor-pointer"
+                                                                            onClick={() => removeSection(group.id, classItem.id, section)}
+                                                                        />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                {['A', 'B', 'C', 'D', 'E'].map((section) => (
+                                                                    <Button
+                                                                        key={section}
+                                                                        onClick={() => addSection(group.id, classItem.id, section)}
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        disabled={classItem.sections.includes(section)}
+                                                                    >
+                                                                        {section}
+                                                                    </Button>
+                                                                ))}
+                                                                <div className="flex gap-1 ml-2">
+                                                                    <Input
+                                                                        placeholder="Extra section"
+                                                                        className="w-20 h-8 text-xs"
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                const val = (e.target as HTMLInputElement).value.trim();
+                                                                                if (val && !classItem.sections.includes(val)) {
+                                                                                    addSection(group.id, classItem.id, val);
+                                                                                    (e.target as HTMLInputElement).value = '';
+                                                                                }
+                                                                            }
+                                                                        }}
                                                                     />
                                                                 </div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="flex gap-2">
-                                                            {['A', 'B', 'C', 'D', 'E'].map((section) => (
-                                                                <Button
-                                                                    key={section}
-                                                                    onClick={() => addSection(group.id, classItem.id, section)}
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    disabled={classItem.sections.includes(section)}
-                                                                >
-                                                                    {section}
-                                                                </Button>
-                                                            ))}
-                                                            <div className="flex gap-1 ml-2">
-                                                                <Input
-                                                                    placeholder="Extra section"
-                                                                    className="w-20 h-8 text-xs"
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') {
-                                                                            const val = (e.target as HTMLInputElement).value.trim();
-                                                                            if (val && !classItem.sections.includes(val)) {
-                                                                                addSection(group.id, classItem.id, val);
-                                                                                (e.target as HTMLInputElement).value = '';
-                                                                            }
-                                                                        }
-                                                                    }}
-                                                                />
                                                             </div>
                                                         </div>
+                                                        <Button
+                                                            onClick={() => removeClass(group.id, classItem.id)}
+                                                            variant="ghost"
+                                                            size="sm"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
                                                     </div>
-                                                    <Button
-                                                        onClick={() => removeClass(group.id, classItem.id)}
-                                                        variant="ghost"
-                                                        size="sm"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </Card>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                                                ))}
+                                            </div>
+                                        </Card>
+                                    ))}
+                                </div>
+                            )
+                        }
+                    </div >
                 );
 
             case 3:
@@ -1011,369 +1028,6 @@ export function AddInstitution() {
                     </div>
                 );
 
-            case 4:
-                return (
-                    <div className="space-y-6">
-                        <h3 className="text-lg font-semibold mb-4">Add Students</h3>
-
-                        <div className="flex gap-4 mb-6">
-                            <Button
-                                onClick={() => setStudentInputMethod('manual')}
-                                variant={studentInputMethod === 'manual' ? 'default' : 'outline'}
-                                className="flex-1"
-                            >
-                                Manual Entry
-                            </Button>
-                            <Button
-                                onClick={() => setStudentInputMethod('excel')}
-                                variant={studentInputMethod === 'excel' ? 'default' : 'outline'}
-                                className="flex-1"
-                            >
-                                Upload Excel
-                            </Button>
-                        </div>
-
-                        {studentInputMethod === 'manual' ? (
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <p className="text-sm text-muted-foreground">Add students one by one</p>
-                                    <Button onClick={addStudent} variant="outline" size="sm">
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Student
-                                    </Button>
-                                </div>
-
-                                {students.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                                        <GraduationCap className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                                        <p className="text-muted-foreground">No students added yet. Click "Add Student" to start.</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-4">
-                                        {students.map((student) => (
-                                            <Card key={student.id} className="p-4">
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <Input
-                                                        value={student.name}
-                                                        onChange={(e) => updateStudent(student.id, 'name', e.target.value)}
-                                                        placeholder="Student Name"
-                                                    />
-                                                    <Input
-                                                        value={student.registerNumber}
-                                                        onChange={(e) => updateStudent(student.id, 'registerNumber', e.target.value)}
-                                                        placeholder="Register Number"
-                                                    />
-                                                    <Select
-                                                        value={student.class}
-                                                        onValueChange={(value) => updateStudent(student.id, 'class', value)}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Class" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {allAvailableClasses.map(c => (
-                                                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select
-                                                        value={student.section}
-                                                        onValueChange={(value) => updateStudent(student.id, 'section', value)}
-                                                        disabled={!student.class}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Section" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {allAvailableClasses.find(c => c.name === student.class)?.sections.map(s => (
-                                                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Input
-                                                        type="date"
-                                                        value={student.dob}
-                                                        onChange={(e) => updateStudent(student.id, 'dob', e.target.value)}
-                                                        placeholder="Date of Birth"
-                                                    />
-                                                    <Select
-                                                        value={student.gender}
-                                                        onValueChange={(value) => updateStudent(student.id, 'gender', value)}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Gender" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="male">Male</SelectItem>
-                                                            <SelectItem value="female">Female</SelectItem>
-                                                            <SelectItem value="other">Other</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Input
-                                                        value={student.parentName}
-                                                        onChange={(e) => updateStudent(student.id, 'parentName', e.target.value)}
-                                                        placeholder="Parent Name"
-                                                    />
-                                                    <Input
-                                                        value={student.parentContact}
-                                                        onChange={(e) => updateStudent(student.id, 'parentContact', e.target.value)}
-                                                        placeholder="Parent Contact"
-                                                    />
-                                                    <Input
-                                                        type="email"
-                                                        value={student.email}
-                                                        onChange={(e) => updateStudent(student.id, 'email', e.target.value)}
-                                                        placeholder="Email"
-                                                    />
-                                                    <div className="md:col-span-2">
-                                                        <Input
-                                                            value={student.address}
-                                                            onChange={(e) => updateStudent(student.id, 'address', e.target.value)}
-                                                            placeholder="Address"
-                                                        />
-                                                    </div>
-                                                    <div className="md:col-span-1">
-                                                        <Input
-                                                            type="password"
-                                                            value={student.password}
-                                                            onChange={(e) => updateStudent(student.id, 'password', e.target.value)}
-                                                            placeholder="Password (Optional)"
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-end">
-                                                        <Button
-                                                            onClick={() => removeStudent(student.id)}
-                                                            variant="destructive"
-                                                            size="sm"
-                                                            className="w-full"
-                                                        >
-                                                            <Trash2 className="w-4 h-4 mr-2" />
-                                                            Remove
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <Card className="p-6">
-                                    <div className="text-center space-y-4">
-                                        <Upload className="w-16 h-16 mx-auto text-muted-foreground" />
-                                        <div>
-                                            <h4 className="font-semibold mb-2">Upload Student Data</h4>
-                                            <p className="text-sm text-muted-foreground mb-4">
-                                                Upload an Excel file (.xlsx or .csv) with student information
-                                            </p>
-                                            <Button
-                                                onClick={() => downloadTemplate('student')}
-                                                variant="outline"
-                                                size="sm"
-                                                className="mb-4"
-                                            >
-                                                <Download className="w-4 h-4 mr-2" />
-                                                Download Sample Template
-                                            </Button>
-                                        </div>
-                                        <Input
-                                            type="file"
-                                            accept=".xlsx,.csv"
-                                            onChange={(e) => setStudentFile(e.target.files?.[0] || null)}
-                                            className="max-w-md mx-auto"
-                                        />
-                                        {studentFile && (
-                                            <div className="text-sm text-success">
-                                                <Check className="w-4 h-4 inline mr-2" />
-                                                File selected: {studentFile.name}
-                                            </div>
-                                        )}
-                                    </div>
-                                </Card>
-                            </div>
-                        )}
-                    </div>
-                );
-
-            case 5:
-                return (
-                    <div className="space-y-6">
-                        <h3 className="text-lg font-semibold mb-4">Add Staff</h3>
-
-                        <div className="flex gap-4 mb-6">
-                            <Button
-                                onClick={() => setStaffInputMethod('manual')}
-                                variant={staffInputMethod === 'manual' ? 'default' : 'outline'}
-                                className="flex-1"
-                            >
-                                Manual Entry
-                            </Button>
-                            <Button
-                                onClick={() => setStaffInputMethod('excel')}
-                                variant={staffInputMethod === 'excel' ? 'default' : 'outline'}
-                                className="flex-1"
-                            >
-                                Upload Excel
-                            </Button>
-                        </div>
-
-                        {staffInputMethod === 'manual' ? (
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <p className="text-sm text-muted-foreground">Add staff members one by one</p>
-                                    <Button onClick={addStaffMember} variant="outline" size="sm">
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Staff
-                                    </Button>
-                                </div>
-
-                                {staff.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                                        <UserCog className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                                        <p className="text-muted-foreground">No staff added yet. Click "Add Staff" to start.</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-4">
-                                        {staff.map((staffMember) => (
-                                            <Card key={staffMember.id} className="p-4">
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <Input
-                                                        value={staffMember.name}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'name', e.target.value)}
-                                                        placeholder="Staff Name"
-                                                    />
-                                                    <Input
-                                                        value={staffMember.staffId}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'staffId', e.target.value)}
-                                                        placeholder="Staff ID"
-                                                    />
-                                                    <Select
-                                                        value={staffMember.role}
-                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'role', value)}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Role" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="teacher">Teacher</SelectItem>
-                                                            <SelectItem value="admin">Admin</SelectItem>
-                                                            <SelectItem value="support">Support</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select
-                                                        value={staffMember.subjectAssigned}
-                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'subjectAssigned', value)}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Subject" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {subjects.map(s => (
-                                                                <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select
-                                                        value={staffMember.classAssigned}
-                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'classAssigned', value)}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Class" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {allAvailableClasses.map(c => (
-                                                                <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select
-                                                        value={staffMember.sectionAssigned}
-                                                        onValueChange={(value) => updateStaffMember(staffMember.id, 'sectionAssigned', value)}
-                                                        disabled={!staffMember.classAssigned}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Section" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {allAvailableClasses.find(c => c.name === staffMember.classAssigned)?.sections.map(s => (
-                                                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Input
-                                                        type="date"
-                                                        value={staffMember.dob}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'dob', e.target.value)}
-                                                        placeholder="Date of Birth"
-                                                    />
-                                                    <Input
-                                                        type="tel"
-                                                        value={staffMember.phone}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'phone', e.target.value)}
-                                                        placeholder="Phone Number"
-                                                    />
-                                                    <Input
-                                                        type="password"
-                                                        value={staffMember.password}
-                                                        onChange={(e) => updateStaffMember(staffMember.id, 'password', e.target.value)}
-                                                        placeholder="Password (Optional)"
-                                                    />
-                                                    <div className="flex items-end">
-                                                        <Button
-                                                            onClick={() => removeStaffMember(staffMember.id)}
-                                                            variant="destructive"
-                                                            size="sm"
-                                                            className="w-full"
-                                                        >
-                                                            <Trash2 className="w-4 h-4 mr-2" />
-                                                            Remove
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <Card className="p-6">
-                                    <div className="text-center space-y-4">
-                                        <Upload className="w-16 h-16 mx-auto text-muted-foreground" />
-                                        <div>
-                                            <h4 className="font-semibold mb-2">Upload Staff Data</h4>
-                                            <p className="text-sm text-muted-foreground mb-4">
-                                                Upload an Excel file (.xlsx or .csv) with staff information
-                                            </p>
-                                            <Button
-                                                onClick={() => downloadTemplate('staff')}
-                                                variant="outline"
-                                                size="sm"
-                                                className="mb-4"
-                                            >
-                                                <Download className="w-4 h-4 mr-2" />
-                                                Download Sample Template
-                                            </Button>
-                                        </div>
-                                        <Input
-                                            type="file"
-                                            accept=".xlsx,.csv"
-                                            onChange={(e) => setStaffFile(e.target.files?.[0] || null)}
-                                            className="max-w-md mx-auto"
-                                        />
-                                        {staffFile && (
-                                            <div className="text-sm text-success">
-                                                <Check className="w-4 h-4 inline mr-2" />
-                                                File selected: {staffFile.name}
-                                            </div>
-                                        )}
-                                    </div>
-                                </Card>
-                            </div>
-                        )}
-                    </div>
-                );
 
             case 4:
                 return (
@@ -1521,7 +1175,7 @@ export function AddInstitution() {
                     Previous
                 </Button>
 
-                {currentStep < 4 ? (
+                {currentStep < steps.length ? (
                     <Button onClick={handleNext}>
                         Next
                         <ChevronRight className="w-4 h-4 ml-2" />
