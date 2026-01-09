@@ -12,6 +12,7 @@ import {
   BarChart3,
   FileText,
   Settings,
+  UserCheck,
 } from 'lucide-react';
 
 export function InstitutionLayout({ children }: { children: ReactNode }) {
@@ -21,9 +22,10 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: t.nav.dashboard, href: '/institution', icon: LayoutDashboard },
     { label: t.nav.departments, href: '/institution/departments', icon: Building2 },
     { label: t.nav.courses, href: '/institution/courses', icon: BookOpen },
-    { label: t.nav.faculty, href: '/institution/faculty', icon: Users },
     { label: t.nav.calendar, href: '/institution/calendar', icon: Calendar },
     { label: t.nav.admissions, href: '/institution/admissions', icon: UserPlus },
+    { label: 'Add Student', href: '/institution/add-student', icon: Users },
+    { label: 'Faculty Assigning', href: '/institution/faculty-assigning', icon: UserCheck },
     { label: t.nav.feeStructure, href: '/institution/fees', icon: DollarSign },
     { label: t.nav.analytics, href: '/institution/analytics', icon: BarChart3 },
     { label: t.nav.reports, href: '/institution/reports', icon: FileText },

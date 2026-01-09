@@ -17,6 +17,7 @@ import {
   TrendingUp,
   IndianRupee,
   UserPlus,
+  Bell,
 } from 'lucide-react';
 
 // --- MOCK DATA FOR CHARTS (Until we have historical tracking tables) ---
@@ -195,16 +196,46 @@ export function InstitutionDashboard() {
           <DataTable columns={admissionColumns} data={recentAdmissions || []} mobileCardView />
         </div>
 
-        {/* Fee Collection */}
+        {/* Notifications / Leave Requests */}
         <div className="dashboard-card p-4 sm:p-6">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
-              <h3 className="font-semibold text-sm sm:text-base">Fee Collection (in ₹M)</h3>
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-warning" />
+              <h3 className="font-semibold text-sm sm:text-base">Notifications (Leave Requests)</h3>
             </div>
+            <a href="/institution/notifications" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
           </div>
-          <div className="chart-container-responsive">
-            <BarChart data={feeCollection} color="hsl(var(--success))" height={250} />
+          <div className="space-y-3">
+            {/* Mock Leave Request Notifications */}
+            <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
+              <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Dr. Robert Brown requested medical leave.</p>
+                <p className="text-xs text-muted-foreground mt-1">Today • 10:30 AM</p>
+                <div className="flex gap-2 mt-2">
+                  <button className="text-xs bg-success/10 text-success hover:bg-success/20 px-2 py-1 rounded transition-colors">Approve</button>
+                  <button className="text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 px-2 py-1 rounded transition-colors">Reject</button>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
+              <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Mrs. Jennifer Lee requested casual leave for tomorrow.</p>
+                <p className="text-xs text-muted-foreground mt-1">Yesterday • 4:15 PM</p>
+                <div className="flex gap-2 mt-2">
+                  <button className="text-xs bg-success/10 text-success hover:bg-success/20 px-2 py-1 rounded transition-colors">Approve</button>
+                  <button className="text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 px-2 py-1 rounded transition-colors">Reject</button>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
+              <div className="w-2 h-2 mt-2 rounded-full bg-institution flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">New fee structure approved by board.</p>
+                <p className="text-xs text-muted-foreground mt-1">2 days ago • General</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

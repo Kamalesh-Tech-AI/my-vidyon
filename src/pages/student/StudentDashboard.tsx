@@ -72,14 +72,12 @@ export function StudentDashboard() {
         .select('*')
         .eq('class_name', studentProfile?.class_name);
 
-      // Transform to CourseCard props
+      // Transform to CourseCard props - only showing subject and instructor
       return (data || []).map((sub: any) => ({
         title: sub.name,
         code: sub.code || sub.class_name,
-        instructor: 'Not Assigned', // Need teacher relation
-        progress: 0,
-        students: 0,
-        schedule: 'TBD'
+        instructor: sub.instructor_name || 'Not Assigned',
+        // Removed progress, students count - these are faculty data
       }));
     },
     enabled: !!studentProfile?.class_name,

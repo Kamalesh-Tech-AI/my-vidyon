@@ -57,13 +57,15 @@ import { FacultyCourseDetails } from "./pages/faculty/FacultyCourseDetails";
 import { InstitutionDashboard } from "./pages/institution/InstitutionDashboard";
 import { InstitutionDepartments } from "./pages/institution/InstitutionDepartments";
 import { InstitutionCourses } from "./pages/institution/InstitutionCourses";
-import { InstitutionFaculty } from "./pages/institution/InstitutionFaculty";
+// import { InstitutionFaculty } from "./pages/institution/InstitutionFaculty"; // Removed
 import { InstitutionCalendar } from "./pages/institution/InstitutionCalendar";
 import { InstitutionAdmissions } from "./pages/institution/InstitutionAdmissions";
 import { InstitutionFees } from "./pages/institution/InstitutionFees";
 import { InstitutionAnalytics } from "./pages/institution/InstitutionAnalytics";
 import { InstitutionReports } from "./pages/institution/InstitutionReports";
 import { InstitutionSettings } from "./pages/institution/InstitutionSettings";
+import { InstitutionAddStudent } from "./pages/institution/InstitutionAddStudent";
+import { InstitutionFacultyAssigning } from "./pages/institution/InstitutionFacultyAssigning";
 
 // Parent Pages
 import { ParentDashboard } from "./pages/parent/ParentDashboard";
@@ -146,7 +148,9 @@ const App = () => {
                 <Route path="/institution" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionDashboard /></ProtectedRoute>} />
                 <Route path="/institution/departments" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionDepartments /></ProtectedRoute>} />
                 <Route path="/institution/courses" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionCourses /></ProtectedRoute>} />
-                <Route path="/institution/faculty" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFaculty /></ProtectedRoute>} />
+                {/* <Route path="/institution/faculty" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFaculty /></ProtectedRoute>} /> */}
+                <Route path="/institution/add-student" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionAddStudent /></ProtectedRoute>} />
+                <Route path="/institution/faculty-assigning" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFacultyAssigning /></ProtectedRoute>} />
                 <Route path="/institution/calendar" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionCalendar /></ProtectedRoute>} />
                 <Route path="/institution/admissions" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionAdmissions /></ProtectedRoute>} />
                 <Route path="/institution/fees" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFees /></ProtectedRoute>} />

@@ -1,21 +1,7 @@
 import { useState } from 'react';
 import { InstitutionLayout } from '@/layouts/InstitutionLayout';
 import { PageHeader } from '@/components/common/PageHeader';
-import { DataTable } from '@/components/common/DataTable';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/common/Badge';
-import { Building2, Plus, Search, Loader2 } from 'lucide-react';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { BookOpen, Users } from 'lucide-react';
 import {
     Select,
     SelectContent,
@@ -23,160 +9,144 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
-const initialDepartments = [
-    { id: '1', name: 'Science', head: 'Dr. James Smith', faculty: 24, students: 450, courses: 12, status: 'active' },
-    { id: '2', name: 'Mathematics', head: 'Dr. Robert Brown', faculty: 18, students: 380, courses: 10, status: 'active' },
-    { id: '3', name: 'Social Studies', head: 'Dr. Michael Wilson', faculty: 15, students: 320, courses: 8, status: 'active' },
-    { id: '4', name: 'English', head: 'Dr. Sarah Davis', faculty: 20, students: 400, courses: 9, status: 'active' },
-    { id: '5', name: 'Hindi', head: 'Dr. David Miller', faculty: 12, students: 250, courses: 7, status: 'inactive' },
+// Mock data for subjects and their assigned staff
+const subjectsData = [
+    {
+        id: '1',
+        name: 'Mathematics',
+        staff: [
+            { id: 's1', name: 'Dr. Robert Brown', classes: ['Grade 10-A', 'Grade 10-B', 'Grade 9-A'] },
+            { id: 's2', name: 'Mrs. Jennifer Lee', classes: ['Grade 8-A', 'Grade 8-B'] },
+            { id: 's3', name: 'Mr. David Kumar', classes: ['Grade 7-A', 'Grade 7-B', 'Grade 7-C'] },
+        ]
+    },
+    {
+        id: '2',
+        name: 'Science',
+        staff: [
+            { id: 's4', name: 'Dr. James Smith', classes: ['Grade 10-A', 'Grade 9-A'] },
+            { id: 's5', name: 'Dr. Priya Sharma', classes: ['Grade 10-B', 'Grade 9-B'] },
+            { id: 's6', name: 'Mr. Arun Patel', classes: ['Grade 8-A', 'Grade 8-B', 'Grade 7-A'] },
+        ]
+    },
+    {
+        id: '3',
+        name: 'English',
+        staff: [
+            { id: 's7', name: 'Dr. Sarah Davis', classes: ['Grade 10-A', 'Grade 10-B'] },
+            { id: 's8', name: 'Mrs. Emily Wilson', classes: ['Grade 9-A', 'Grade 9-B', 'Grade 8-A'] },
+            { id: 's9', name: 'Mr. Michael Brown', classes: ['Grade 7-A', 'Grade 7-B'] },
+        ]
+    },
+    {
+        id: '4',
+        name: 'Hindi',
+        staff: [
+            { id: 's10', name: 'Dr. Deepak Verma', classes: ['Grade 10-A', 'Grade 9-A', 'Grade 8-A'] },
+            { id: 's11', name: 'Mrs. Anjali Singh', classes: ['Grade 10-B', 'Grade 9-B'] },
+            { id: 's12', name: 'Mr. Rajesh Kumar', classes: ['Grade 7-A', 'Grade 7-B', 'Grade 8-B'] },
+        ]
+    },
+    {
+        id: '5',
+        name: 'Social Studies',
+        staff: [
+            { id: 's13', name: 'Dr. Michael Wilson', classes: ['Grade 10-A', 'Grade 10-B'] },
+            { id: 's14', name: 'Mrs. Kavita Reddy', classes: ['Grade 9-A', 'Grade 9-B'] },
+            { id: 's15', name: 'Mr. Arjun Mehta', classes: ['Grade 8-A', 'Grade 8-B'] },
+        ]
+    },
+    {
+        id: '6',
+        name: 'Physical Education',
+        staff: [
+            { id: 's16', name: 'Mr. Vikram Singh', classes: ['All Grades'] },
+            { id: 's17', name: 'Mrs. Neha Kapoor', classes: ['All Grades'] },
+        ]
+    },
 ];
 
 export function InstitutionDepartments() {
-    const [departments, setDepartments] = useState(initialDepartments);
-    const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [newDept, setNewDept] = useState({
-        name: '',
-        head: '',
-        status: 'active'
-    });
+    const [selectedSubject, setSelectedSubject] = useState<string>('1');
 
-    const handleAddDepartment = () => {
-        setIsSubmitting(true);
-        // Simulate API call
-        setTimeout(() => {
-            const department = {
-                id: (departments.length + 1).toString(),
-                name: newDept.name,
-                head: newDept.head,
-                faculty: 0,
-                students: 0,
-                courses: 0,
-                status: newDept.status
-            };
-            setDepartments([...departments, department]);
-            setIsSubmitting(false);
-            setIsAddDialogOpen(false);
-            setNewDept({ name: '', head: '', status: 'active' });
-            toast.success("Department added successfully");
-        }, 1000);
-    };
-
-    const columns = [
-        { key: 'name', header: 'Department Name' },
-        { key: 'head', header: 'Head of Department' },
-        { key: 'faculty', header: 'Faculty Count' },
-        { key: 'students', header: 'Student Count' },
-        { key: 'courses', header: 'Courses' },
-        {
-            key: 'status',
-            header: 'Status',
-            render: (item: typeof departments[0]) => (
-                <Badge variant={item.status === 'active' ? 'success' : 'outline'}>
-                    {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                </Badge>
-            ),
-        },
-        {
-            key: 'actions',
-            header: 'Actions',
-            render: () => (
-                <Button variant="ghost" size="sm">Edit</Button>
-            ),
-        },
-    ];
+    const currentSubjectData = subjectsData.find(s => s.id === selectedSubject);
 
     return (
         <InstitutionLayout>
             <PageHeader
-                title="Departments"
-                subtitle="Manage academic departments and their administration"
-                actions={
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <input
-                                type="text"
-                                placeholder="Search departments..."
-                                className="input-field pl-10 w-64"
-                            />
-                        </div>
-                        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button className="flex items-center gap-2">
-                                    <Plus className="w-4 h-4" />
-                                    Add Department
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="sm:max-w-[425px]">
-                                <DialogHeader>
-                                    <DialogTitle>Add Department</DialogTitle>
-                                    <DialogDescription>
-                                        Create a new academic department. Click save when you're done.
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4 py-4">
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="name" className="text-right">
-                                            Name
-                                        </Label>
-                                        <Input
-                                            id="name"
-                                            value={newDept.name}
-                                            onChange={(e) => setNewDept({ ...newDept, name: e.target.value })}
-                                            className="col-span-3"
-                                            placeholder="e.g. Psychology"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="head" className="text-right">
-                                            Head
-                                        </Label>
-                                        <Input
-                                            id="head"
-                                            value={newDept.head}
-                                            onChange={(e) => setNewDept({ ...newDept, head: e.target.value })}
-                                            className="col-span-3"
-                                            placeholder="e.g. Dr. Emily White"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="status" className="text-right">
-                                            Status
-                                        </Label>
-                                        <div className="col-span-3">
-                                            <Select
-                                                value={newDept.status}
-                                                onValueChange={(value) => setNewDept({ ...newDept, status: value })}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select status" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="active">Active</SelectItem>
-                                                    <SelectItem value="inactive">Inactive</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <DialogFooter>
-                                    <Button type="submit" onClick={handleAddDepartment} disabled={!newDept.name || !newDept.head || isSubmitting}>
-                                        {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                        Save changes
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
-                    </div>
-                }
+                title="Subjects & Staff"
+                subtitle="View staff members assigned to each subject"
             />
 
-            <div className="dashboard-card">
-                <DataTable columns={columns} data={departments} />
+            {/* Subject Selector */}
+            <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">Select Subject</label>
+                <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                    <SelectTrigger className="w-full max-w-md">
+                        <SelectValue placeholder="Choose a subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {subjectsData.map((subject) => (
+                            <SelectItem key={subject.id} value={subject.id}>
+                                {subject.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
+
+            {/* Staff Cards for Selected Subject */}
+            {currentSubjectData && (
+                <div>
+                    <div className="flex items-center gap-2 mb-4">
+                        <BookOpen className="w-5 h-5 text-institution" />
+                        <h2 className="text-lg font-semibold">{currentSubjectData.name} Teachers</h2>
+                        <span className="text-sm text-muted-foreground ml-2">
+                            ({currentSubjectData.staff.length} staff members)
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {currentSubjectData.staff.map((staffMember) => (
+                            <div
+                                key={staffMember.id}
+                                className="dashboard-card p-5 hover:shadow-lg transition-shadow"
+                            >
+                                <div className="flex items-start gap-3 mb-4">
+                                    <div className="w-12 h-12 rounded-full bg-institution/10 flex items-center justify-center flex-shrink-0">
+                                        <Users className="w-6 h-6 text-institution" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-semibold text-base truncate">
+                                            {staffMember.name}
+                                        </h3>
+                                        <p className="text-sm text-muted-foreground">
+                                            {currentSubjectData.name} Teacher
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                        Assigned Classes:
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {staffMember.classes.map((className, idx) => (
+                                            <span
+                                                key={idx}
+                                                className="inline-flex items-center px-2.5 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium"
+                                            >
+                                                {className}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </InstitutionLayout>
     );
 }

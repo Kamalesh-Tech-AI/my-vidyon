@@ -1,98 +1,137 @@
+import { useState } from 'react';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/common/Badge';
 import { useTranslation } from '@/i18n/TranslationContext';
-import { TrendingUp, Award } from 'lucide-react';
+import { TrendingUp, Award, FileSpreadsheet } from 'lucide-react';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Label } from '@/components/ui/label';
 
-const gradesData = [
-    { course: 'Mathematics', code: 'MAT10', midterm: 85, assignments: 90, final: 88, total: 88, grade: 'A1' },
-    { course: 'Science', code: 'SCI10', midterm: 78, assignments: 85, final: 82, total: 82, grade: 'A2' },
-    { course: 'English', code: 'ENG10', midterm: 92, assignments: 95, final: 90, total: 92, grade: 'A1' },
-    { course: 'Social Studies', code: 'SST10', midterm: 75, assignments: 80, final: 78, total: 78, grade: 'B1' },
-    { course: 'Hindi', code: 'HIN10', midterm: 88, assignments: 85, final: 86, total: 86, grade: 'A2' },
-];
-
-const semesterPercentage = '85%';
-const overallPercentage = '83%';
+// Mock Data Structure for multiple exams
+const examResults = {
+    'term1': {
+        title: 'Term 1 Final Examination',
+        results: [
+            { course: 'Mathematics', marks: 88, total: 100, grade: 'A2', remarks: 'Excellent performance' },
+            { course: 'Science', marks: 82, total: 100, grade: 'A2', remarks: 'Good understanding of concepts' },
+            { course: 'English', marks: 90, total: 100, grade: 'A1', remarks: 'Outstanding' },
+            { course: 'Social Studies', marks: 78, total: 100, grade: 'B1', remarks: 'Can do better' },
+            { course: 'Hindi', marks: 86, total: 100, grade: 'A2', remarks: 'Very Good' },
+        ],
+        percentage: '84.8%'
+    },
+    'ut1': {
+        title: 'Unit Test - I',
+        results: [
+            { course: 'Mathematics', marks: 22, total: 25, grade: 'A1', remarks: 'Great job' },
+            { course: 'Science', marks: 20, total: 25, grade: 'A2', remarks: 'Good' },
+            { course: 'English', marks: 24, total: 25, grade: 'A1', remarks: 'Excellent' },
+        ],
+        percentage: '88.0%'
+    },
+    'ut2': {
+        title: 'Unit Test - II',
+        results: [
+            { course: 'Mathematics', marks: 24, total: 25, grade: 'A1', remarks: 'Improved' },
+            { course: 'Science', marks: 23, total: 25, grade: 'A1', remarks: 'Very Good' },
+            { course: 'English', marks: 23, total: 25, grade: 'A1', remarks: 'Consistent' },
+        ],
+        percentage: '93.3%'
+    }
+};
 
 export function StudentGrades() {
     const { t } = useTranslation();
+    const [selectedExam, setSelectedExam] = useState<string>('term1');
+
+    const currentExamData = examResults[selectedExam as keyof typeof examResults];
+
     return (
         <StudentLayout>
             <PageHeader
-                title={t.nav.grades}
-                subtitle={t.dashboard.overview}
+                title="Exam Results"
+                subtitle="View your performance across different assessments"
             />
 
-            {/* GPA Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="dashboard-card">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-muted-foreground mb-1">Semester %</p>
-                            <h3 className="text-3xl font-bold text-primary">{semesterPercentage}</h3>
-                            <p className="text-sm text-success mt-1 flex items-center gap-1">
-                                <TrendingUp className="w-4 h-4" />
-                                +2% from last semester
-                            </p>
-                        </div>
-                        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                            <Award className="w-8 h-8 text-primary" />
-                        </div>
+            {/* Exam Selector */}
+            <div className="dashboard-card mb-6 p-6">
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                    <div className="flex-1">
+                        <Label className="mb-2 block">Select Examination</Label>
+                        <Select value={selectedExam} onValueChange={setSelectedExam}>
+                            <SelectTrigger className="w-full md:w-[300px]">
+                                <div className="flex items-center gap-2">
+                                    <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+                                    <SelectValue placeholder="Select Exam" />
+                                </div>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="term1">Term 1 Final Exam</SelectItem>
+                                <SelectItem value="ut1">Unit Test - I</SelectItem>
+                                <SelectItem value="ut2">Unit Test - II</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
-                </div>
-
-                <div className="dashboard-card">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-muted-foreground mb-1">Overall %</p>
-                            <h3 className="text-3xl font-bold text-foreground">{overallPercentage}</h3>
-                            <p className="text-sm text-muted-foreground mt-1">Overall Performance</p>
+                    {currentExamData && (
+                        <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg border border-border/50">
+                            <div className="p-2 bg-primary/10 rounded-full">
+                                <Award className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-muted-foreground">Overall Percentage</p>
+                                <p className="text-2xl font-bold text-primary">{currentExamData.percentage}</p>
+                            </div>
                         </div>
-                        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-                            <TrendingUp className="w-8 h-8 text-muted-foreground" />
-                        </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
-            {/* Grades Table */}
-            <div className="dashboard-card">
-                <h3 className="font-semibold mb-6">Course Grades</h3>
+            {/* Results Table */}
+            {currentExamData && (
+                <div className="dashboard-card">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-semibold text-lg">{currentExamData.title} Result</h3>
+                        <Badge variant="outline">
+                            {currentExamData.results.length} Subjects
+                        </Badge>
+                    </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="border-b border-border">
-                                <th className="table-header text-left">Course</th>
-                                <th className="table-header text-center">Code</th>
-                                <th className="table-header text-center">Midterm</th>
-                                <th className="table-header text-center">Assignments</th>
-                                <th className="table-header text-center">Final</th>
-                                <th className="table-header text-center">Total</th>
-                                <th className="table-header text-center">Grade</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {gradesData.map((course) => (
-                                <tr key={course.code} className="border-b border-border hover:bg-muted/50">
-                                    <td className="table-cell font-medium">{course.course}</td>
-                                    <td className="table-cell text-center text-muted-foreground">{course.code}</td>
-                                    <td className="table-cell text-center">{course.midterm}</td>
-                                    <td className="table-cell text-center">{course.assignments}</td>
-                                    <td className="table-cell text-center">{course.final}</td>
-                                    <td className="table-cell text-center font-semibold">{course.total}</td>
-                                    <td className="table-cell text-center">
-                                        <Badge variant={course.grade.startsWith('A') ? 'success' : course.grade.startsWith('B') ? 'info' : 'default'}>
-                                            {course.grade}
-                                        </Badge>
-                                    </td>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-border">
+                                    <th className="table-header text-left">Subject</th>
+                                    <th className="table-header text-center">Marks Obtained</th>
+                                    <th className="table-header text-center">Total Marks</th>
+                                    <th className="table-header text-center">Grade</th>
+                                    <th className="table-header text-left">Remarks</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {currentExamData.results.map((result, index) => (
+                                    <tr key={index} className="border-b border-border hover:bg-muted/50 transition-colors">
+                                        <td className="table-cell font-medium">{result.course}</td>
+                                        <td className="table-cell text-center font-semibold">{result.marks}</td>
+                                        <td className="table-cell text-center text-muted-foreground">{result.total}</td>
+                                        <td className="table-cell text-center">
+                                            <Badge variant={result.grade.startsWith('A') ? 'success' : result.grade.startsWith('B') ? 'info' : 'warning'}>
+                                                {result.grade}
+                                            </Badge>
+                                        </td>
+                                        <td className="table-cell text-muted-foreground text-sm">{result.remarks}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            )}
         </StudentLayout>
     );
 }

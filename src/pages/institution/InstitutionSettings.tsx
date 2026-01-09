@@ -25,9 +25,6 @@ export function InstitutionSettings() {
     const tabs = [
         { id: 'general', label: 'General Info', icon: Building },
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'security', label: 'Security', icon: Shield },
-        { id: 'integration', label: 'Website Integration', icon: Globe },
-        { id: 'system', label: 'System Config', icon: SettingsIcon },
     ];
 
     return (
@@ -123,107 +120,17 @@ export function InstitutionSettings() {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div className="space-y-0.5">
+                                        <Label className="text-base">Leave Request Alerts</Label>
+                                        <p className="text-sm text-muted-foreground">Get notified when staff submits leave requests.</p>
+                                    </div>
+                                    <Switch defaultChecked />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
                                         <Label className="text-base">Marketing Emails</Label>
                                         <p className="text-sm text-muted-foreground">Receive updates about new features and promotions.</p>
                                     </div>
                                     <Switch defaultChecked />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'security' && (
-                        <div className="dashboard-card pt-6">
-                            <h3 className="text-lg font-semibold mb-6">Security Settings</h3>
-                            <div className="space-y-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-0.5">
-                                        <Label className="text-base">Two-Factor Authentication (2FA)</Label>
-                                        <p className="text-sm text-muted-foreground">Add an extra layer of security to your account.</p>
-                                    </div>
-                                    <Switch />
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                                    <div className="space-y-2">
-                                        <Label>Password Rotation Policy</Label>
-                                        <Select defaultValue="90">
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select duration" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="30">Every 30 Days</SelectItem>
-                                                <SelectItem value="60">Every 60 Days</SelectItem>
-                                                <SelectItem value="90">Every 90 Days</SelectItem>
-                                                <SelectItem value="never">Never</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Session Timeout (Minutes)</Label>
-                                        <Input type="number" defaultValue="30" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'integration' && (
-                        <div className="dashboard-card pt-6">
-                            <h3 className="text-lg font-semibold mb-6">Website Integration</h3>
-                            <div className="space-y-6">
-                                <div className="space-y-2">
-                                    <Label>API Key</Label>
-                                    <div className="flex gap-2">
-                                        <Input readOnly value="sk_live_51M..." className="font-mono bg-muted" />
-                                        <Button variant="outline">Regenerate</Button>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">Keep this key secret. Do not share it in public repositories.</p>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Webhook URL</Label>
-                                    <Input placeholder="https://your-website.com/api/webhook" />
-                                    <p className="text-xs text-muted-foreground">We will send event notifications to this URL.</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'system' && (
-                        <div className="dashboard-card pt-6">
-                            <h3 className="text-lg font-semibold mb-6">System Configuration</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <Label>System Language</Label>
-                                    <Select defaultValue="en">
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select language" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="en">English (US)</SelectItem>
-                                            <SelectItem value="es">Spanish</SelectItem>
-                                            <SelectItem value="fr">French</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Timezone</Label>
-                                    <Select defaultValue="utc">
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select timezone" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="utc">UTC (Coordinated Universal Time)</SelectItem>
-                                            <SelectItem value="est">EST (Eastern Standard Time)</SelectItem>
-                                            <SelectItem value="pst">PST (Pacific Standard Time)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="flex items-center justify-between md:col-span-2 pt-4">
-                                    <div className="space-y-0.5">
-                                        <Label className="text-base">Maintenance Mode</Label>
-                                        <p className="text-sm text-muted-foreground">Prevent users from accessing the system during updates.</p>
-                                    </div>
-                                    <Switch />
                                 </div>
                             </div>
                         </div>
