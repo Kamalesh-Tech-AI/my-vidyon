@@ -99,99 +99,36 @@ export function InstitutionCalendar() {
         setViewTimetable({ exam });
     };
 
-    // Custom CSS for Realistic Book Page Flip
-    const bookFlipStyle = `
-        .perspective-container {
-            perspective: 2500px;
-            transform-style: preserve-3d;
-            position: relative;
-        }
-
-        /* Shadow/Highlight Overlay */
-        .perspective-container::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(90deg, 
-                rgba(0,0,0,0) 0%, 
-                rgba(0,0,0,0.1) 40%, 
-                rgba(255,255,255,0.2) 50%, 
-                rgba(0,0,0,0.1) 60%, 
-                rgba(0,0,0,0) 100%
-            );
-            opacity: 0;
-            pointer-events: none;
-            z-index: 10;
-        }
-
-        @keyframes realisticFlipInNext {
+    // Smooth Calendar Transition
+    const calendarTransitionStyle = `
+        @keyframes smoothSlideNext {
             0% {
-                transform: rotateY(80deg) skewY(-5deg) scale(0.95);
                 opacity: 0;
-                transform-origin: left center;
-                filter: brightness(0.8);
-            }
-            40% {
-                transform: rotateY(30deg) skewY(2deg) scale(1.02);
-                opacity: 1;
-                filter: brightness(1.1);
-            }
-            70% {
-                 transform: rotateY(10deg) skewY(-1deg) scale(1.01);
-                 filter: brightness(1.05);
+                transform: translateX(20px);
             }
             100% {
-                transform: rotateY(0deg) skewY(0deg) scale(1);
                 opacity: 1;
-                transform-origin: left center;
-                filter: brightness(1);
+                transform: translateX(0);
             }
         }
 
-        @keyframes realisticFlipInPrev {
+        @keyframes smoothSlidePrev {
             0% {
-                transform: rotateY(-80deg) skewY(5deg) scale(0.95);
                 opacity: 0;
-                transform-origin: right center;
-                filter: brightness(0.8);
-            }
-            40% {
-                transform: rotateY(-30deg) skewY(-2deg) scale(1.02);
-                opacity: 1;
-                filter: brightness(1.1);
-            }
-            70% {
-                transform: rotateY(-10deg) skewY(1deg) scale(1.01);
-                filter: brightness(1.05);
+                transform: translateX(-20px);
             }
             100% {
-                transform: rotateY(0deg) skewY(0deg) scale(1);
                 opacity: 1;
-                transform-origin: right center;
-                filter: brightness(1);
+                transform: translateX(0);
             }
         }
-        
-        @keyframes shadowSweep {
-            0% { opacity: 0; transform: translateX(-100%); }
-            50% { opacity: 1; transform: translateX(0); }
-            100% { opacity: 0; transform: translateX(100%); }
+
+        .animate-slide-next {
+            animation: smoothSlideNext 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
-        .animate-flip-next {
-            animation: realisticFlipInNext 0.9s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-            backface-visibility: hidden;
-            will-change: transform, opacity, filter;
-        }
-        
-        .animate-flip-next::after {
-            animation: shadowSweep 0.9s ease-out forwards;
-        }
-
-        .animate-flip-prev {
-            animation: realisticFlipInPrev 0.9s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-            backface-visibility: hidden;
-            will-change: transform, opacity, filter;
+        .animate-slide-prev {
+            animation: smoothSlidePrev 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
     `;
 
@@ -257,7 +194,7 @@ export function InstitutionCalendar() {
         setIsAnimating(true);
         setDirection('prev');
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-        setTimeout(() => setIsAnimating(false), 900);
+        setTimeout(() => setIsAnimating(false), 300);
     };
 
     const handleNextMonth = () => {
@@ -265,12 +202,12 @@ export function InstitutionCalendar() {
         setIsAnimating(true);
         setDirection('next');
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-        setTimeout(() => setIsAnimating(false), 900);
+        setTimeout(() => setIsAnimating(false), 300);
     };
 
     return (
         <InstitutionLayout>
-            <style>{bookFlipStyle}</style>
+            <style>{calendarTransitionStyle}</style>
             <PageHeader
                 title="Academic Calendar"
                 subtitle="Schedule and track academic events, exams, and holidays"
@@ -426,7 +363,7 @@ export function InstitutionCalendar() {
 
                     <div
                         key={`${currentDate.toString()}`}
-                        className={`grid grid-cols-7 gap-px bg-border overflow-hidden rounded-lg perspective-container ${direction === 'next' ? 'animate-flip-next' : 'animate-flip-prev'}`}
+                        className={`grid grid-cols-7 gap-px bg-border overflow-hidden rounded-lg ${direction === 'next' ? 'animate-slide-next' : 'animate-slide-prev'}`}
                     >
                         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                             <div key={day} className="bg-muted p-2 text-center text-xs font-semibold text-muted-foreground">{day}</div>

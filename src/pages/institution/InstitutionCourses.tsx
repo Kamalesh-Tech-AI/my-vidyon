@@ -64,7 +64,6 @@ export function InstitutionCourses() {
     };
 
     const columns = [
-        { key: 'code', header: 'Code' },
         { key: 'name', header: 'Course Name' },
         { key: 'department', header: 'Subject Group' },
         { key: 'instructor', header: 'Lead Instructor' },

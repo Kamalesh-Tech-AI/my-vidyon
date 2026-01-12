@@ -13,6 +13,7 @@ import {
   FileText,
   Settings,
   UserCheck,
+  ClipboardCheck,
 } from 'lucide-react';
 
 export function InstitutionLayout({ children }: { children: ReactNode }) {
@@ -25,6 +26,7 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: t.nav.calendar, href: '/institution/calendar', icon: Calendar },
     { label: 'Add Student', href: '/institution/add-student', icon: Users },
     { label: 'Faculty Assigning', href: '/institution/faculty-assigning', icon: UserCheck },
+    { label: 'Leave Approval', href: '/institution/leave-approval', icon: ClipboardCheck },
     { label: t.nav.feeStructure, href: '/institution/fees', icon: DollarSign },
     { label: t.nav.analytics, href: '/institution/analytics', icon: BarChart3 },
     { label: t.nav.reports, href: '/institution/reports', icon: FileText },

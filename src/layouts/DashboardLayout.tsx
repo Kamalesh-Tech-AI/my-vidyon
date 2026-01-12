@@ -101,11 +101,11 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
 
       {/* Sidebar */}
       <aside className={cn(
-        'fixed top-0 left-0 h-full bg-sidebar-gradient z-40 transition-all duration-300',
+        'fixed top-0 left-0 h-full bg-sidebar-gradient z-40 transition-all duration-300 flex flex-col',
         sidebarOpen ? 'w-64' : 'w-20',
-        'hidden lg:block'
+        'hidden lg:flex'
       )}>
-        <div className="h-32 flex items-center gap-3 px-4 border-b border-sidebar-border bg-sidebar-gradient overflow-hidden">
+        <div className="h-32 flex items-center gap-3 px-4 border-b border-sidebar-border bg-sidebar-gradient overflow-hidden flex-shrink-0">
           <img src="/my-vidyon-logo.png" alt="Vidyon Logo" className={cn("h-24 w-auto transition-all", !sidebarOpen && "mx-auto")} />
           {sidebarOpen && (
             <div className="animate-fade-in truncate">
@@ -117,30 +117,31 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'nav-link',
-                  isActive && 'nav-link-active',
-                  !sidebarOpen && 'justify-center px-2'
-                )}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
-                {sidebarOpen && <span className="animate-fade-in">{item.label}</span>}
-              </Link>
-            );
-          })}
-        </nav>
-
+        <div className="flex-1 overflow-y-auto py-4 custom-scrollbar">
+          <nav className="px-4 space-y-1">
+            {navItems.map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    'nav-link flex-shrink-0',
+                    isActive && 'nav-link-active',
+                    !sidebarOpen && 'justify-center px-2'
+                  )}
+                >
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {sidebarOpen && <span className="animate-fade-in">{item.label}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
 
 
         {/* User Profile */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-sidebar-border bg-sidebar-gradient">
+        <div className="p-4 border-t border-sidebar-border bg-sidebar-gradient flex-shrink-0">
           <div className={cn('flex items-center gap-3', !sidebarOpen && 'justify-center')}>
             <Link
               to={settingsPath}

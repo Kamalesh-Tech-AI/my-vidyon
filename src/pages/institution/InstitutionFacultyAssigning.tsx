@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { InstitutionLayout } from '@/layouts/InstitutionLayout';
+import { useInstitution } from '@/context/InstitutionContext';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -10,49 +11,78 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { UserCheck, Plus, X } from 'lucide-react';
+import { UserCheck, Plus, X, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/common/Badge';
 
 interface StaffAssignment {
-    id: string;
+    id: string; // internal id for UI list key
     staffName: string;
     staffId: string;
 }
 
 export function InstitutionFacultyAssigning() {
-    const [assignmentType, setAssignmentType] = useState<string>('class');
+    const {
+        allSubjects,
+        allStaffMembers,
+        getAssignedStaff,
+        assignStaff,
+        getClassTeacher,
+        assignClassTeacher
+    } = useInstitution();
+
     const [selectedClass, setSelectedClass] = useState<string>('');
     const [selectedSection, setSelectedSection] = useState<string>('');
-    const [selectedSubject, setSelectedSubject] = useState<string>('');
+
+    // Class Teacher State
     const [selectedClassTeacher, setSelectedClassTeacher] = useState<string>('');
+
+    // Subject Staff State
+    const [selectedSubject, setSelectedSubject] = useState<string>('');
     const [subjectStaff, setSubjectStaff] = useState<StaffAssignment[]>([]);
 
-    // Mock data
+    // Mock data for dropdowns
     const classes = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
     const sections = ['A', 'B', 'C', 'D'];
-    const subjects = ['Mathematics', 'Science', 'English', 'Hindi', 'Social Studies', 'Computer Science', 'Physical Education'];
-    const staffMembers = [
-        { id: 'staff1', name: 'Dr. Robert Brown' },
-        { id: 'staff2', name: 'Dr. James Smith' },
-        { id: 'staff3', name: 'Dr. Sarah Davis' },
-        { id: 'staff4', name: 'Mrs. Jennifer Lee' },
-        { id: 'staff5', name: 'Mr. David Kumar' },
-        { id: 'staff6', name: 'Dr. Priya Sharma' },
-        { id: 'staff7', name: 'Mrs. Emily Wilson' },
-        { id: 'staff8', name: 'Mr. Michael Brown' },
-        { id: 'staff9', name: 'Dr. Deepak Verma' },
-        { id: 'staff10', name: 'Mrs. Anjali Singh' },
-    ];
+
+    // Load Class Teacher when Class/Section changes
+    useEffect(() => {
+        if (selectedClass && selectedSection) {
+            const ctId = getClassTeacher(selectedClass, selectedSection);
+            setSelectedClassTeacher(ctId || '');
+        } else {
+            setSelectedClassTeacher('');
+        }
+    }, [selectedClass, selectedSection, getClassTeacher]);
+
+    // Load existing Subject assignments when Subject (or Class/Section) changes
+    useEffect(() => {
+        if (selectedClass && selectedSection && selectedSubject) {
+            const assigned = getAssignedStaff(selectedClass, selectedSection, selectedSubject);
+
+            // Map to UI format
+            const uiStaff = assigned.map(s => ({
+                id: Math.random().toString(36).substr(2, 9),
+                staffId: s.id,
+                staffName: s.name
+            }));
+
+            setSubjectStaff(uiStaff);
+        } else {
+            setSubjectStaff([]);
+        }
+    }, [selectedClass, selectedSection, selectedSubject, getAssignedStaff]);
 
     const handleAddStaff = () => {
-        if (assignmentType === 'subject' && selectedSubject) {
+        if (selectedSubject) {
             const newStaff: StaffAssignment = {
                 id: Date.now().toString(),
                 staffName: '',
                 staffId: ''
             };
             setSubjectStaff([...subjectStaff, newStaff]);
+        } else {
+            toast.error("Please select a subject first.");
         }
     };
 
@@ -61,7 +91,7 @@ export function InstitutionFacultyAssigning() {
     };
 
     const handleStaffChange = (id: string, staffId: string) => {
-        const selectedStaff = staffMembers.find(s => s.id === staffId);
+        const selectedStaff = allStaffMembers.find(s => s.id === staffId);
         if (selectedStaff) {
             setSubjectStaff(subjectStaff.map(s =>
                 s.id === id
@@ -72,14 +102,49 @@ export function InstitutionFacultyAssigning() {
     };
 
     const handleSubmit = () => {
-        if (assignmentType === 'class' && selectedClassTeacher && selectedClass && selectedSection) {
-            toast.success(`Class Teacher assigned successfully!`);
-            console.log('Class Teacher Assignment:', { selectedClass, selectedSection, selectedClassTeacher });
-        } else if (assignmentType === 'subject' && selectedSubject && subjectStaff.length > 0) {
-            toast.success(`Subject staff assigned successfully!`);
-            console.log('Subject Staff Assignment:', { selectedSubject, subjectStaff });
+        if (selectedClass && selectedSection) {
+            let hasErrors = false;
+
+            // validate Class Teacher (optional? usually required)
+            // if required:
+            if (!selectedClassTeacher) {
+                toast.error("Please select a Class Teacher.");
+                hasErrors = true;
+            }
+
+            // Save Class Teacher
+            if (selectedClassTeacher) {
+                assignClassTeacher(selectedClass, selectedSection, selectedClassTeacher);
+            }
+
+            // Save Subject Staff
+            if (selectedSubject) {
+                // Validate subject staff 
+                if (subjectStaff.length > 0 && subjectStaff.some(s => !s.staffId)) {
+                    toast.error("Please select a staff member for all subject assignment rows.");
+                    hasErrors = true;
+                }
+
+                if (!hasErrors) {
+                    const staffIds = subjectStaff.map(s => s.staffId).filter(Boolean);
+                    assignStaff(selectedClass, selectedSection, selectedSubject, staffIds);
+                }
+            } else {
+                // If no subject is selected, we only saved Class Teacher, which is valid.
+                if (!hasErrors) toast.success("Class Teacher saved!");
+            }
+
+            if (!hasErrors && selectedSubject) {
+                // The assignStaff function triggered a toast internally in previous step, so we might get partial double toast if we add one here.
+                // let's rely on assignStaff toast or context toast. 
+                // Actually I removed toast from assignClassTeacher to avoid spam.
+                // Let's just toast "Assignments Saved" once if everything is good.
+                // But assignStaff has toast inside it... I should probably remove it from context or just live with "Subject staff assigned" + "Class teacher saved"
+                // Let's refine context later if needed.
+            }
+
         } else {
-            toast.error('Please complete all required fields');
+            toast.error('Please select Class and Section');
         }
     };
 
@@ -91,36 +156,17 @@ export function InstitutionFacultyAssigning() {
             />
 
             <div className="dashboard-card p-6">
-                {/* Assignment Type Toggle */}
-                <div className="mb-6">
-                    <Label className="mb-2 block">Assignment Type</Label>
-                    <div className="flex gap-3">
-                        <Button
-                            type="button"
-                            variant={assignmentType === 'class' ? 'default' : 'outline'}
-                            onClick={() => setAssignmentType('class')}
-                        >
-                            Class Teacher Assignment
-                        </Button>
-                        <Button
-                            type="button"
-                            variant={assignmentType === 'subject' ? 'default' : 'outline'}
-                            onClick={() => setAssignmentType('subject')}
-                        >
-                            Subject Staff Assignment
-                        </Button>
-                    </div>
-                </div>
 
-                {/* Class Teacher Assignment Form */}
-                {assignmentType === 'class' && (
-                    <div className="space-y-6">
-                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                {/* Unified Form */}
+                <div className="space-y-8">
+
+                    {/* 1. Class Selection Row */}
+                    <div>
+                        <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
                             <UserCheck className="w-5 h-5 text-primary" />
-                            Assign Class Teacher
+                            Class & Section Selection
                         </h3>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <Label htmlFor="class">Select Class *</Label>
                                 <Select value={selectedClass} onValueChange={setSelectedClass}>
@@ -148,167 +194,148 @@ export function InstitutionFacultyAssigning() {
                                     </SelectContent>
                                 </Select>
                             </div>
-
-                            <div>
-                                <Label htmlFor="classTeacher">Select Class Teacher *</Label>
-                                <Select value={selectedClassTeacher} onValueChange={setSelectedClassTeacher}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Choose teacher" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {staffMembers.map((staff) => (
-                                            <SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
-
-                        {selectedClass && selectedSection && selectedClassTeacher && (
-                            <div className="p-4 bg-muted/50 rounded-lg">
-                                <p className="text-sm font-medium mb-2">Assignment Preview:</p>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <Badge variant="default">
-                                        {selectedClass} - Section {selectedSection}
-                                    </Badge>
-                                    <span className="text-sm">→</span>
-                                    <Badge variant="success">
-                                        {staffMembers.find(s => s.id === selectedClassTeacher)?.name}
-                                    </Badge>
-                                </div>
-                            </div>
-                        )}
                     </div>
-                )}
 
-                {/* Subject Staff Assignment Form */}
-                {assignmentType === 'subject' && (
-                    <div className="space-y-6">
-                        <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <UserCheck className="w-5 h-5 text-primary" />
-                            Assign Subject Teachers
-                        </h3>
+                    <div className="border-t pt-6"></div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <Label htmlFor="class">Select Class *</Label>
-                                <Select value={selectedClass} onValueChange={setSelectedClass}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Choose class" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {classes.map((cls) => (
-                                            <SelectItem key={cls} value={cls}>{cls}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div>
-                                <Label htmlFor="section">Select Section *</Label>
-                                <Select value={selectedSection} onValueChange={setSelectedSection}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Choose section" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {sections.map((sec) => (
-                                            <SelectItem key={sec} value={sec}>{sec}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div>
-                                <Label htmlFor="subject">Select Subject *</Label>
-                                <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Choose subject" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {subjects.map((sub) => (
-                                            <SelectItem key={sub} value={sub}>{sub}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                    {/* 2. Class Teacher Assignment */}
+                    {selectedClass && selectedSection && (
+                        <div className="bg-muted/30 p-4 rounded-lg border border-border/50">
+                            <h3 className="text-md font-semibold flex items-center gap-2 mb-3 text-primary">
+                                <GraduationCap className="w-5 h-5" />
+                                Class Teacher Assignment
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label htmlFor="classTeacher">Assign Class Teacher (One per class) *</Label>
+                                    <Select value={selectedClassTeacher} onValueChange={setSelectedClassTeacher}>
+                                        <SelectTrigger className="bg-background">
+                                            <SelectValue placeholder="Choose Class Teacher" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {allStaffMembers.map((staff) => (
+                                                <SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground mt-1">This teacher will be responsible for the entire class/section.</p>
+                                </div>
                             </div>
                         </div>
+                    )}
 
-                        {selectedSubject && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <Label>Assign Staff to {selectedSubject}</Label>
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={handleAddStaff}
-                                        className="flex items-center gap-2"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        Add Staff
-                                    </Button>
+                    {/* 3. Subject Staff Assignment */}
+                    {selectedClass && selectedSection && (
+                        <div>
+                            <h3 className="text-md font-semibold flex items-center gap-2 mb-3">
+                                <UserCheck className="w-5 h-5 text-primary" />
+                                Subject Staff Assignment
+                            </h3>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <Label htmlFor="subject">Select Subject to Assign *</Label>
+                                    <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Choose subject" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {allSubjects.map((sub) => (
+                                                <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
+                            </div>
 
-                                {subjectStaff.length === 0 ? (
-                                    <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground">
-                                        <p>No staff assigned yet. Click "Add Staff" to begin.</p>
+                            {selectedSubject && (
+                                <div className="space-y-4 border rounded-lg p-4 bg-muted/10">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-base">Teachers for {allSubjects.find(s => s.id === selectedSubject)?.name}</Label>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={handleAddStaff}
+                                            className="flex items-center gap-2"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Add Staff
+                                        </Button>
                                     </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {subjectStaff.map((staff) => (
-                                            <div key={staff.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                                                <div className="flex-1">
-                                                    <Select
-                                                        value={staff.staffId}
-                                                        onValueChange={(value) => handleStaffChange(staff.id, value)}
+
+                                    {subjectStaff.length === 0 ? (
+                                        <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground bg-background">
+                                            <p>No staff assigned to {allSubjects.find(s => s.id === selectedSubject)?.name} yet.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {subjectStaff.map((staff) => (
+                                                <div key={staff.id} className="flex items-center gap-3 p-3 bg-background border rounded-lg shadow-sm">
+                                                    <div className="flex-1">
+                                                        <Select
+                                                            value={staff.staffId}
+                                                            onValueChange={(value) => handleStaffChange(staff.id, value)}
+                                                        >
+                                                            <SelectTrigger>
+                                                                <SelectValue placeholder="Select a teacher" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {allStaffMembers.map((member) => (
+                                                                    <SelectItem key={member.id} value={member.id}>
+                                                                        {member.name}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleRemoveStaff(staff.id)}
                                                     >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Select a teacher" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {staffMembers.map((member) => (
-                                                                <SelectItem key={member.id} value={member.id}>
-                                                                    {member.name}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
+                                                        <X className="w-4 h-4 text-destructive" />
+                                                    </Button>
                                                 </div>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleRemoveStaff(staff.id)}
-                                                >
-                                                    <X className="w-4 h-4 text-destructive" />
-                                                </Button>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Preview Section - Only show if we have data */}
+                    {(selectedClassTeacher || subjectStaff.length > 0) && selectedClass && selectedSection && (
+                        <div className="p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+                            <p className="text-sm font-medium mb-2 text-blue-900">Current Session Preview:</p>
+                            <div className="flex flex-col gap-2">
+                                {selectedClassTeacher && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold uppercase text-muted-foreground w-24">Class Teacher:</span>
+                                        <Badge variant="outline" className="bg-white">
+                                            {allStaffMembers.find(s => s.id === selectedClassTeacher)?.name}
+                                        </Badge>
                                     </div>
                                 )}
-
-                                {subjectStaff.length > 0 && subjectStaff.every(s => s.staffId) && (
-                                    <div className="p-4 bg-muted/50 rounded-lg">
-                                        <p className="text-sm font-medium mb-2">Assignment Preview:</p>
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <Badge variant="default">
-                                                    {selectedClass} - Section {selectedSection} - {selectedSubject}
+                                {selectedSubject && subjectStaff.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold uppercase text-muted-foreground w-24">{allSubjects.find(s => s.id === selectedSubject)?.name}:</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {subjectStaff.map(s => (
+                                                <Badge key={s.id} variant="success">
+                                                    {s.staffName}
                                                 </Badge>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                {subjectStaff.map((staff) => (
-                                                    <Badge key={staff.id} variant="success">
-                                                        {staff.staffName}
-                                                    </Badge>
-                                                ))}
-                                            </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
-                )}
+                        </div>
+                    )}
+
+                </div>
 
                 {/* Submit Button */}
                 <div className="flex justify-end gap-3 mt-6 pt-6 border-t">
@@ -316,7 +343,7 @@ export function InstitutionFacultyAssigning() {
                         Cancel
                     </Button>
                     <Button type="button" onClick={handleSubmit}>
-                        Save Assignment
+                        Save All Assignments
                     </Button>
                 </div>
             </div>

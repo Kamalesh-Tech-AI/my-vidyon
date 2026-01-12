@@ -43,33 +43,37 @@ const CLASSES = ['LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'
 const SECTIONS = ['A', 'B', 'C', 'D'];
 const FACULTY = ['Smitha Jones', 'Robert Wilson', 'Priya Sharma', 'David Miller'];
 
-const MOCK_STUDENTS = Array.from({ length: 15 }).map((_, i) => ({
-    id: `STU${2025000 + i}`,
-    name: `Student Name ${i + 1}`,
-    rollNo: `25CS${100 + i}`,
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`,
-    dob: '12-05-2008',
-    bloodGroup: 'B+',
-    parentName: 'Parent Name',
-    contact: '+91 98765 43210',
-    address: '123, Main Street, City',
-    fees: {
-        total: 45000,
-        paid: i % 3 === 0 ? 45000 : 30000,
-        pending: i % 3 === 0 ? 0 : 15000,
-        status: i % 3 === 0 ? 'Paid' : 'Pending',
-        structure: [
-            { category: 'Tuition Fee', amount: 25000 },
-            { category: 'Term Fee', amount: 10000 },
-            { category: 'Lab & Activity', amount: 5000 },
-            { category: 'Transport', amount: 5000 },
-        ]
-    },
-    notifications: {
-        status: i % 3 === 0 ? 'completed' : i % 2 === 0 ? 'pending' : 'current',
-        currentStep: i % 3 === 0 ? 4 : i % 2 === 0 ? 1 : 2
-    }
-}));
+const MOCK_STUDENTS = Array.from({ length: 15 }).map((_, i) => {
+    const status = i % 3 === 0 ? 'Paid' : i % 3 === 1 ? 'Pending' : 'Due';
+    return {
+        id: `STU${2025000 + i}`,
+        name: `Student Name ${i + 1}`,
+        rollNo: `25CS${100 + i}`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`,
+        dob: '12-05-2008',
+        bloodGroup: 'B+',
+        parentName: 'Parent Name',
+        contact: '+91 98765 43210',
+        address: '123, Main Street, City',
+        fees: {
+            total: 45000,
+            paid: status === 'Paid' ? 45000 : 30000,
+            pending: status === 'Paid' ? 0 : 15000,
+            status: status as 'Paid' | 'Pending' | 'Due',
+            dueDate: status === 'Due' ? '15th Feb 2025' : undefined,
+            structure: [
+                { category: 'Tuition Fee', amount: 25000 },
+                { category: 'Term Fee', amount: 10000 },
+                { category: 'Lab & Activity', amount: 5000 },
+                { category: 'Transport', amount: 5000 },
+            ]
+        },
+        notifications: {
+            status: i % 3 === 0 ? 'completed' : i % 2 === 0 ? 'pending' : 'current',
+            currentStep: i % 3 === 0 ? 4 : i % 2 === 0 ? 1 : 2
+        }
+    };
+});
 
 type TrackingStage = {
     id: number;
@@ -85,6 +89,7 @@ export function InstitutionFees() {
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [selectedSection, setSelectedSection] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'tree' | 'students'>('tree');
+    const [filterStatus, setFilterStatus] = useState<string>('All');
 
     // Popup State
     const [selectedStudent, setSelectedStudent] = useState<typeof MOCK_STUDENTS[0] | null>(null);
@@ -106,10 +111,12 @@ export function InstitutionFees() {
         if (selectedClass === cls) return;
         setSelectedClass(cls);
         setSelectedSection(null);
+        setFilterStatus('All');
     };
 
     const handleSectionSelect = (sec: string) => {
         setSelectedSection(sec);
+        setFilterStatus('All');
     };
 
     const handleViewStudents = () => {
@@ -122,12 +129,14 @@ export function InstitutionFees() {
         setIsSelectionStarted(true);
         setSelectedClass(null);
         setSelectedSection(null);
+        setFilterStatus('All');
     };
 
     const resetSelection = () => {
         setIsSelectionStarted(false);
         setSelectedClass(null);
         setSelectedSection(null);
+        setFilterStatus('All');
     };
 
     const openFeesDialog = (student: typeof MOCK_STUDENTS[0]) => {
@@ -369,11 +378,24 @@ export function InstitutionFees() {
                             <div>
                                 <h2 className="text-lg font-bold flex items-center gap-2">Students List <Badge variant="outline" className="ml-2">Class {selectedClass}-{selectedSection}</Badge></h2>
                             </div>
+                            <div className="ml-auto w-[180px]">
+                                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Filter by status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="All">All Students</SelectItem>
+                                        <SelectItem value="Paid">Paid</SelectItem>
+                                        <SelectItem value="Pending">Pending</SelectItem>
+                                        <SelectItem value="Due">Due</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
 
                         <ScrollArea className="flex-1 p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                                {MOCK_STUDENTS.map((student) => (
+                                {MOCK_STUDENTS.filter(student => filterStatus === 'All' ? true : student.fees.status === filterStatus).map((student) => (
                                     <div key={student.id} className="group relative border rounded-xl p-5 hover:shadow-lg hover:border-primary/50 transition-all bg-card/50">
                                         <div className="flex items-start justify-between mb-4">
                                             <div className="flex items-center gap-3">
@@ -383,9 +405,12 @@ export function InstitutionFees() {
                                                 <div>
                                                     <h3 className="font-semibold group-hover:text-primary transition-colors">{student.name}</h3>
                                                     <p className="text-xs text-muted-foreground">Roll: {student.rollNo}</p>
+                                                    {student.fees.status === 'Due' && (
+                                                        <p className="text-xs text-destructive font-medium mt-0.5">Due: {student.fees.dueDate}</p>
+                                                    )}
                                                 </div>
                                             </div>
-                                            <Badge variant={student.fees.status === 'Paid' ? 'success' : 'warning'} className="uppercase text-[10px]">{student.fees.status}</Badge>
+                                            <Badge variant={student.fees.status === 'Paid' ? 'success' : student.fees.status === 'Pending' ? 'warning' : 'destructive'} className="uppercase text-[10px]">{student.fees.status}</Badge>
                                         </div>
 
                                         <div className="flex items-center gap-2 mt-4">

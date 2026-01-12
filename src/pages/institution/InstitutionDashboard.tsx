@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { InstitutionLayout } from '@/layouts/InstitutionLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
@@ -40,6 +41,7 @@ const feeCollection = [
 export function InstitutionDashboard() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // 1. Fetch Stats (Parallel)
   const { data: stats } = useQuery({
@@ -210,22 +212,30 @@ export function InstitutionDashboard() {
             <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
               <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium">Dr. Robert Brown requested medical leave.</p>
+                <p className="text-sm font-medium">Dr. Robert Brown requesting leave.</p>
                 <p className="text-xs text-muted-foreground mt-1">Today • 10:30 AM</p>
-                <div className="flex gap-2 mt-2">
-                  <button className="text-xs bg-success/10 text-success hover:bg-success/20 px-2 py-1 rounded transition-colors">Approve</button>
-                  <button className="text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 px-2 py-1 rounded transition-colors">Reject</button>
+                <div className="mt-2">
+                  <button
+                    onClick={() => navigate('/institution/leave-approval')}
+                    className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors font-medium border border-primary/20"
+                  >
+                    Show Details
+                  </button>
                 </div>
               </div>
             </div>
             <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
               <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium">Mrs. Jennifer Lee requested casual leave for tomorrow.</p>
+                <p className="text-sm font-medium">Mrs. Jennifer Lee requesting leave.</p>
                 <p className="text-xs text-muted-foreground mt-1">Yesterday • 4:15 PM</p>
-                <div className="flex gap-2 mt-2">
-                  <button className="text-xs bg-success/10 text-success hover:bg-success/20 px-2 py-1 rounded transition-colors">Approve</button>
-                  <button className="text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 px-2 py-1 rounded transition-colors">Reject</button>
+                <div className="mt-2">
+                  <button
+                    onClick={() => navigate('/institution/leave-approval')}
+                    className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors font-medium border border-primary/20"
+                  >
+                    Show Details
+                  </button>
                 </div>
               </div>
             </div>
