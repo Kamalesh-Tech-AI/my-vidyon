@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     }
 
     try {
-        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id, parent_email, parent_phone, parent_name } = await req.json()
+        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id, parent_email, parent_phone, parent_name, class_name, section } = await req.json()
 
         if (!email || !role || !institution_id) {
             throw new Error("Missing required fields: email, role, and institution_id are required.")
@@ -91,7 +91,9 @@ Deno.serve(async (req) => {
                     register_number: register_number || `REG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
                     parent_email: parent_email,
                     parent_phone: parent_phone,
-                    parent_name: parent_name
+                    parent_name: parent_name,
+                    class_name: class_name,
+                    section: section
                 });
             if (studentError) console.error("Error creating student record:", studentError);
         } else if (finalRole === 'parent') {
