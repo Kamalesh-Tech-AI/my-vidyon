@@ -1,127 +1,176 @@
-import { StudentLayout } from '@/layouts/StudentLayout';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2, Calendar, Clock } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
-import { useTranslation } from '@/i18n/TranslationContext';
-import { Calendar, Clock } from 'lucide-react';
+import { StudentLayout } from '@/layouts/StudentLayout';
 
-const timetableData = [
-    {
-        day: 'Monday', slots: [
-            { time: '9:00 - 10:00', subject: 'Mathematics', room: 'Room 10A', faculty: 'Mr. Sharma' },
-            { time: '10:00 - 11:00', subject: 'English', room: 'Room 10A', faculty: 'Ms. Davis' },
-            { time: '11:00 - 12:00', subject: 'Break', room: '-', faculty: '-' },
-            { time: '12:00 - 1:00', subject: 'Physics', room: 'Lab 1', faculty: 'Mrs. Verma' },
-        ]
-    },
-    {
-        day: 'Tuesday', slots: [
-            { time: '9:00 - 10:00', subject: 'Chemistry', room: 'Lab 2', faculty: 'Mr. Gupta' },
-            { time: '10:00 - 11:00', subject: 'Social Science', room: 'Room 10A', faculty: 'Mr. Das' },
-            { time: '11:00 - 12:00', subject: 'Break', room: '-', faculty: '-' },
-            { time: '12:00 - 1:00', subject: 'Mathematics', room: 'Room 10A', faculty: 'Mr. Sharma' },
-        ]
-    },
-    {
-        day: 'Wednesday', slots: [
-            { time: '9:00 - 10:00', subject: 'English', room: 'Room 10A', faculty: 'Ms. Davis' },
-            { time: '10:00 - 11:00', subject: 'Hindi', room: 'Room 10A', faculty: 'Mrs. Singh' },
-            { time: '11:00 - 12:00', subject: 'Break', room: '-', faculty: '-' },
-            { time: '12:00 - 1:00', subject: 'Computer Science', room: 'Lab 3', faculty: 'Ms. Iyer' },
-        ]
-    },
-    {
-        day: 'Thursday', slots: [
-            { time: '9:00 - 10:00', subject: 'Mathematics', room: 'Room 10A', faculty: 'Mr. Sharma' },
-            { time: '10:00 - 11:00', subject: 'Biology', room: 'Lab 4', faculty: 'Dr. Reddy' },
-            { time: '11:00 - 12:00', subject: 'Break', room: '-', faculty: '-' },
-            { time: '12:00 - 1:00', subject: 'Social Science', room: 'Room 10A', faculty: 'Mr. Das' },
-        ]
-    },
-    {
-        day: 'Friday', slots: [
-            { time: '9:00 - 10:00', subject: 'Geography', room: 'Room 10A', faculty: 'Ms. Iyer' },
-            { time: '10:00 - 11:00', subject: 'Physical Education', room: 'Ground', faculty: 'Mr. Khan' },
-            { time: '11:00 - 12:00', subject: 'Break', room: '-', faculty: '-' },
-            { time: '12:00 - 1:00', subject: 'Free Period', room: '-', faculty: '-' },
-        ]
-    },
-];
+interface TimetableSlot {
+    id: string;
+    day_of_week: string;
+    period_index: number;
+    start_time: string;
+    end_time: string;
+    subject: { name: string; code: string } | null;
+    faculty: { full_name: string } | null;
+    is_break: boolean;
+    break_name: string;
+}
 
 export function StudentTimetable() {
-    const { t } = useTranslation();
+    const { user } = useAuth();
+    const [loading, setLoading] = useState(true);
+    const [slots, setSlots] = useState<TimetableSlot[]>([]);
+    const [config, setConfig] = useState<any>(null);
+
+    useEffect(() => {
+        if (user) {
+            fetchTimetable();
+        }
+    }, [user]);
+
+    const fetchTimetable = async () => {
+        try {
+            setLoading(true);
+            // 1. Get Student's Class from 'students' table
+            const { data: studentData, error: studentError } = await supabase
+                .from('students')
+                .select('class_name, section, institution_id')
+                .eq('email', user?.email)
+                .single();
+
+            if (studentError) throw studentError;
+            if (!studentData) return;
+
+            // 2. Resolve Class ID (Need ID for timetable config)
+            const { data: classData, error: classError } = await supabase
+                .from('classes')
+                .select('id')
+                .eq('name', studentData.class_name)
+                // .eq('group_id', ...) // Ideally match institution group but simplified
+                .limit(1)
+                .single();
+
+            if (classError && classError.code !== 'PGRST116') throw classError;
+            if (!classData) return;
+
+            // 3. Fetch Config
+            const { data: configData, error: configError } = await supabase
+                .from('timetable_configs')
+                .select('*')
+                .eq('class_id', classData.id)
+                .eq('section', studentData.section)
+                .single();
+
+            if (configError && configError.code !== 'PGRST116') throw configError;
+
+            if (configData) {
+                setConfig(configData);
+
+                // 4. Fetch Slots
+                const { data: slotData, error: slotError } = await supabase
+                    .from('timetable_slots')
+                    .select(`
+                        id, day_of_week, period_index, start_time, end_time, is_break, break_name,
+                        subject:subjects(name, code),
+                        faculty:profiles(full_name)
+                    `)
+                    .eq('config_id', configData.id)
+                    .order('period_index');
+
+                const transformedSlots = (slotData || []).map((slot: any) => ({
+                    ...slot,
+                    subject: Array.isArray(slot.subject) ? slot.subject[0] : slot.subject,
+                    faculty: Array.isArray(slot.faculty) ? slot.faculty[0] : slot.faculty
+                }));
+
+                setSlots(transformedSlots);
+            }
+
+        } catch (error) {
+            console.error('Error fetching timetable:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <StudentLayout>
+                <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>
+            </StudentLayout>
+        );
+    }
+
+    if (!config) {
+        return (
+            <StudentLayout>
+                <PageHeader title="My Timetable" subtitle="Weekly Schedule" />
+                <Card className="m-4">
+                    <CardContent className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
+                        <Calendar className="w-12 h-12 mb-4" />
+                        <h2 className="text-xl font-semibold mb-2">No Timetable Published</h2>
+                        <p>Your class teacher hasn't published the timetable yet.</p>
+                    </CardContent>
+                </Card>
+            </StudentLayout>
+        );
+    }
+
+    const days = config.days_of_week || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const periods = Array.from({ length: config.periods_per_day }, (_, i) => i + 1);
 
     return (
         <StudentLayout>
-            <PageHeader
-                title={t.nav.timetable}
-                subtitle={t.dashboard.overview}
-            />
+            <PageHeader title="My Timetable" subtitle="Weekly Schedule" />
 
-            <div className="dashboard-card p-4 sm:p-6">
-                <div className="flex items-center gap-2 mb-4 sm:mb-6">
-                    <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-                    <h3 className="font-semibold text-sm sm:text-base">{t.nav.timetable}</h3>
-                </div>
-
-                {/* Mobile Card View */}
-                <div className="block sm:hidden space-y-4">
-                    {timetableData.map((day) => (
-                        <div key={day.day} className="bg-muted/30 rounded-lg p-3">
-                            <h4 className="font-semibold text-sm mb-2 text-primary">{day.day}</h4>
-                            <div className="space-y-2">
-                                {day.slots.map((slot, index) => {
-                                    const isBreak = slot.subject === 'Break' || slot.subject === 'Free Period';
-                                    return (
-                                        <div key={index} className={`flex items-start gap-2 ${isBreak ? 'opacity-50' : ''}`}>
-                                            <span className="text-xs text-muted-foreground w-20 flex-shrink-0">{slot.time}</span>
-                                            {isBreak ? (
-                                                <span className="text-xs italic text-muted-foreground">{slot.subject}</span>
-                                            ) : (
-                                                <div className="flex-1">
-                                                    <p className="text-xs font-medium">{slot.subject}</p>
-                                                    <p className="text-[10px] text-muted-foreground">{slot.room} • {slot.faculty}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                {/* Desktop Table View */}
-                <div className="hidden sm:block overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 scroll-smooth-touch">
-                    <table className="w-full min-w-[700px]">
+            <Card className="overflow-x-auto">
+                <CardContent className="p-0">
+                    <table className="w-full border-collapse min-w-[1000px]">
                         <thead>
-                            <tr className="border-b border-border">
-                                <th className="table-header py-2 sm:py-3 px-2 sm:px-4 text-left text-xs sm:text-sm">Time</th>
-                                {timetableData.map((day) => (
-                                    <th key={day.day} className="table-header py-2 sm:py-3 px-2 sm:px-4 text-center text-xs sm:text-sm">{day.day}</th>
+                            <tr>
+                                <th className="border p-3 bg-muted/50 w-32 text-left">Day</th>
+                                {periods.map(p => (
+                                    <th key={p} className="border p-3 bg-muted/50 text-center min-w-[120px]">
+                                        <div className="font-semibold text-sm">Period {p}</div>
+                                    </th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
-                            {[0, 1, 2, 3].map((slotIndex) => (
-                                <tr key={slotIndex} className="border-b border-border hover:bg-muted/50">
-                                    <td className="table-cell font-medium text-muted-foreground py-2 sm:py-4 px-2 sm:px-4">
-                                        <div className="flex items-center gap-1 sm:gap-2">
-                                            <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span className="text-xs sm:text-sm whitespace-nowrap">{timetableData[0].slots[slotIndex].time}</span>
-                                        </div>
-                                    </td>
-                                    {timetableData.map((day) => {
-                                        const slot = day.slots[slotIndex];
-                                        const isBreak = slot.subject === 'Break' || slot.subject === 'Free Period';
+                            {days.map((day: string) => (
+                                <tr key={day}>
+                                    <td className="border p-3 font-medium bg-muted/10">{day}</td>
+                                    {periods.map(p => {
+                                        const slot = slots.find(s => s.day_of_week === day && s.period_index === p);
                                         return (
-                                            <td key={day.day} className="table-cell py-2 sm:py-4 px-2 sm:px-4">
-                                                {isBreak ? (
-                                                    <div className="text-center text-muted-foreground italic text-xs sm:text-sm">{slot.subject}</div>
-                                                ) : (
-                                                    <div className="p-2 sm:p-3 bg-primary/5 rounded-lg border border-primary/10">
-                                                        <div className="font-medium text-xs sm:text-sm">{slot.subject}</div>
-                                                        <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">{slot.room}</div>
-                                                        <div className="text-[10px] sm:text-xs text-muted-foreground">{slot.faculty}</div>
+                                            <td key={p} className="border p-2 text-center h-24 align-top">
+                                                {slot ? (
+                                                    <div className="flex flex-col h-full justify-between gap-1">
+                                                        {slot.is_break ? (
+                                                            <div className="bg-secondary/50 rounded p-1 flex items-center justify-center h-full text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                                {slot.break_name || 'Break'}
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <div className="font-semibold text-sm text-primary">
+                                                                    {slot.subject?.name || 'Free'}
+                                                                </div>
+                                                                {slot.faculty && (
+                                                                    <div className="text-xs text-muted-foreground">
+                                                                        {slot.faculty.full_name}
+                                                                    </div>
+                                                                )}
+                                                                <div className="mt-auto flex items-center justify-center gap-1 text-[10px] text-muted-foreground bg-muted rounded-full py-0.5 px-2 w-fit mx-auto">
+                                                                    <Clock className="w-3 h-3" />
+                                                                    {slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)}
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">-</div>
                                                 )}
                                             </td>
                                         );
@@ -130,8 +179,8 @@ export function StudentTimetable() {
                             ))}
                         </tbody>
                     </table>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
         </StudentLayout>
     );
 }

@@ -3,7 +3,7 @@ import { InstitutionLayout } from '@/layouts/InstitutionLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { Button } from '@/components/ui/button';
-import { FileText, Download, Eye, Calendar, Search, Loader2, Plus } from 'lucide-react';
+import { FileText, Download, Eye, Calendar as CalendarIcon, Search, Loader2, Plus, X } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -23,6 +23,15 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { addDays, format, isWithinInterval, parse } from "date-fns";
+import { DateRange } from "react-day-picker";
+import { Calendar } from "@/components/ui/calendar";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 const initialReports = [
     { id: '1', name: 'Annual Academic Report 2025', type: 'Academic', date: 'Dec 15, 2025', size: '2.4 MB', format: 'PDF' },
@@ -36,10 +45,39 @@ export function InstitutionReports() {
     const [reports, setReports] = useState(initialReports);
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [date, setDate] = useState<DateRange | undefined>();
+    const [categoryFilter, setCategoryFilter] = useState("all");
+
+    // Get unique categories from reports
+    const uniqueCategories = Array.from(new Set(reports.map(r => r.type)));
+
     const [newReport, setNewReport] = useState({
         name: '',
         type: '',
         format: ''
+    });
+
+    const filteredReports = reports.filter(report => {
+        const matchesSearch = report.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            report.type.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = categoryFilter === "all" || report.type === categoryFilter;
+
+        let matchesDate = true;
+        if (date?.from && date?.to) {
+            try {
+                const reportDate = parse(report.date, 'MMM d, yyyy', new Date());
+                const start = new Date(date.from); start.setHours(0, 0, 0, 0);
+                const end = new Date(date.to); end.setHours(23, 59, 59, 999);
+                if (date.from && date.to) {
+                    matchesDate = isWithinInterval(reportDate, { start, end });
+                }
+            } catch (e) {
+                console.error("Date parsing error", e);
+            }
+        }
+
+        return matchesSearch && matchesDate && matchesCategory;
     });
 
     const handleGenerateReport = () => {
@@ -107,12 +145,86 @@ export function InstitutionReports() {
                                 type="text"
                                 placeholder="Search reports..."
                                 className="input-field pl-10 w-64"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
-                        <Button variant="outline" className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            Custom Range
-                        </Button>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    id="date"
+                                    variant={"outline"}
+                                    className={cn(
+                                        "min-w-[180px] justify-start text-left font-normal gap-2",
+                                        !date && categoryFilter === "all" && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="h-4 w-4 flex-shrink-0" />
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        {categoryFilter !== "all" && (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-medium">
+                                                {categoryFilter}
+                                            </span>
+                                        )}
+                                        {date?.from ? (
+                                            date.to ? (
+                                                <span className="text-sm">
+                                                    {format(date.from, "MMM dd")} - {format(date.to, "MMM dd, yyyy")}
+                                                </span>
+                                            ) : (
+                                                <span className="text-sm">{format(date.from, "MMM dd, yyyy")}</span>
+                                            )
+                                        ) : (
+                                            !categoryFilter || categoryFilter === "all" ? (
+                                                <span>Filters</span>
+                                            ) : null
+                                        )}
+                                    </div>
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-4" align="end">
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm text-muted-foreground">Filter by Category</h4>
+                                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="All Categories" />
+                                            </SelectTrigger>
+                                            <SelectContent position="popper">
+                                                <SelectItem value="all">All Categories</SelectItem>
+                                                {uniqueCategories.map((cat) => (
+                                                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="border-t pt-4">
+                                        <Calendar
+                                            initialFocus
+                                            mode="range"
+                                            defaultMonth={date?.from}
+                                            selected={date}
+                                            onSelect={setDate}
+                                            numberOfMonths={2}
+                                        />
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                        {(date?.from || searchQuery || categoryFilter !== "all") && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                    setDate(undefined);
+                                    setSearchQuery('');
+                                    setCategoryFilter("all");
+                                }}
+                                title="Clear filters"
+                            >
+                                <X className="w-4 h-4" />
+                            </Button>
+                        )}
                         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                             <DialogTrigger asChild>
                                 <Button className="flex items-center gap-2">
@@ -191,7 +303,7 @@ export function InstitutionReports() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 {[
                     { label: 'Total Reports', value: '124', icon: FileText, color: 'text-primary' },
-                    { label: 'Generated this Month', value: '18', icon: Calendar, color: 'text-info' },
+                    { label: 'Generated this Month', value: '18', icon: CalendarIcon, color: 'text-info' },
                     { label: 'Downloads this Week', value: '86', icon: Download, color: 'text-success' },
                 ].map((stat, idx) => (
                     <div key={idx} className="dashboard-card flex items-center gap-4">
@@ -207,7 +319,7 @@ export function InstitutionReports() {
             </div>
 
             <div className="dashboard-card">
-                <DataTable columns={columns} data={reports} />
+                <DataTable columns={columns} data={filteredReports} />
             </div>
         </InstitutionLayout>
     );

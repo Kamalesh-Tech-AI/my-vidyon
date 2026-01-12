@@ -52,6 +52,7 @@ import { CreateSubject } from "./pages/faculty/CreateSubject";
 import { UploadExamPaper } from "./pages/faculty/UploadExamPaper";
 import { FacultySettings } from "./pages/faculty/FacultySettings";
 import { FacultyCourseDetails } from "./pages/faculty/FacultyCourseDetails";
+import { TimetableManagement } from "./pages/faculty/TimetableManagement";
 
 // Institution Pages
 import { InstitutionDashboard } from "./pages/institution/InstitutionDashboard";
