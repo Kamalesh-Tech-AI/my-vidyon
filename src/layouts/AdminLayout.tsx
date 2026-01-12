@@ -18,7 +18,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const adminNavItems = [
     { label: t.nav.dashboard, href: '/admin', icon: LayoutDashboard },
     { label: t.nav.institutions, href: '/admin/institutions', icon: Building2 },
-    { label: t.nav.users, href: '/admin/users', icon: Users },
     { label: t.nav.analytics, href: '/admin/reports', icon: BarChart3 },
     { label: t.nav.settings, href: '/admin/settings', icon: Settings },
   ];

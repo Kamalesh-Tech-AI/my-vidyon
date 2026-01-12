@@ -24,7 +24,7 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: t.nav.departments, href: '/institution/departments', icon: Building2 },
     { label: t.nav.courses, href: '/institution/courses', icon: BookOpen },
     { label: t.nav.calendar, href: '/institution/calendar', icon: Calendar },
-    { label: 'Add Student', href: '/institution/add-student', icon: Users },
+    { label: 'User Management', href: '/institution/users', icon: Users },
     { label: 'Faculty Assigning', href: '/institution/faculty-assigning', icon: UserCheck },
     { label: 'Leave Approval', href: '/institution/leave-approval', icon: ClipboardCheck },
     { label: t.nav.feeStructure, href: '/institution/fees', icon: DollarSign },
