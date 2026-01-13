@@ -68,11 +68,11 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
             setAllSubjectsList(subjectsData || []);
 
             // 2. Fetch Staff (Profiles with roles) & Staff Details (for department)
+            // Fetching all and filtering client-side to match InstitutionUsers Page logic perfectly
             const { data: staffProfiles } = await supabase
                 .from('profiles')
                 .select('id, full_name, role')
-                .eq('institution_id', institutionId)
-                .in('role', ['faculty', 'teacher', 'admin', 'support']);
+                .eq('institution_id', institutionId);
 
             const { data: staffDetails } = await supabase
                 .from('staff_details')
@@ -82,11 +82,17 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
             const staffMap = new Map();
             staffDetails?.forEach((d: any) => staffMap.set(d.profile_id, d.department));
 
-            setAllStaffMembers(staffProfiles?.map(s => ({
-                id: s.id,
-                name: s.full_name || 'Unknown',
-                department: staffMap.get(s.id) || null
-            })) || []);
+            // Permitted roles for assignment
+            const targetRoles = ['faculty', 'teacher', 'admin', 'support', 'institution'];
+
+            setAllStaffMembers(staffProfiles
+                ?.filter((s: any) => targetRoles.includes(s.role))
+                .map((s: any) => ({
+                    id: s.id,
+                    name: s.full_name || 'Unknown',
+                    department: staffMap.get(s.id) || null
+                })) || []
+            );
 
             // 3. Fetch Classes (for Class Teachers and structure)
             // 3. Fetch Classes (via Groups to ensure correct path)
@@ -128,35 +134,43 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
             console.log("InstitutionContext: Processed allClasses:", fetchedClasses);
             setAllClasses(fetchedClasses.map((c) => ({ id: c.id, name: c.name, section: c.section })));
 
-            // Build ClassTeacherMap
-            const newClassTeacherMap: ClassTeacherMap = {};
-            fetchedClasses.forEach(c => {
-                if (c.classTeacherId) {
-                    if (!newClassTeacherMap[c.id]) newClassTeacherMap[c.id] = {};
-                    newClassTeacherMap[c.id][c.section] = c.classTeacherId;
-                }
-            });
-            setClassTeachers(newClassTeacherMap);
+            // Legacy Class Teacher logic removed in favor of faculty_subjects table
+            // const newClassTeacherMap: ClassTeacherMap = {}; ...
 
-            // 4. Fetch Assignments (Faculty Subjects)
+            // 4. Fetch Assignments (Faculty Subjects) - Unified Table
             const { data: assignmentsData } = await supabase
                 .from('faculty_subjects')
                 .select('*')
                 .eq('institution_id', institutionId);
 
             const newAssignments: AssignmentsMap = {};
-            assignmentsData?.forEach(a => {
+            const newClassTeacherMap: ClassTeacherMap = {};
+
+            assignmentsData?.forEach((a: any) => {
+                // Initialize maps if needed
                 if (!newAssignments[a.class_id]) newAssignments[a.class_id] = {};
                 if (!newAssignments[a.class_id][a.section]) newAssignments[a.class_id][a.section] = {};
 
-                // Supabase returns one row per faculty assignment, but our map expects array of staffIds
-                // But wait, the unique constraint is (faculty, subject, class, section). 
-                // So we aggregate staffIds for same (class, section, subject).
-                if (!newAssignments[a.class_id][a.section][a.subject_id]) {
-                    newAssignments[a.class_id][a.section][a.subject_id] = [];
+                if (!newClassTeacherMap[a.class_id]) newClassTeacherMap[a.class_id] = {};
+
+                // Logic based on assignment_type
+                // 'class_teacher' -> goes to ClassTeacherMap
+                // 'subject_staff' -> goes to AssignmentsMap
+
+                if (a.assignment_type === 'class_teacher') {
+                    newClassTeacherMap[a.class_id][a.section] = a.faculty_profile_id;
+                } else {
+                    // Default to subject_staff
+                    if (!newAssignments[a.class_id][a.section][a.subject_id]) {
+                        newAssignments[a.class_id][a.section][a.subject_id] = [];
+                    }
+                    newAssignments[a.class_id][a.section][a.subject_id].push(a.faculty_profile_id);
                 }
-                newAssignments[a.class_id][a.section][a.subject_id].push(a.faculty_profile_id);
             });
+
+            // Merge with any legacy class_teacher_id from classes table if needed, or just overwrite
+            // For now, we favor the faculty_subjects table as per new schema.
+            setClassTeachers(newClassTeacherMap);
             setAssignments(newAssignments);
 
         } catch (error) {
@@ -170,18 +184,21 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         fetchData();
 
+        if (!institutionId) return;
+
         // Realtime Subscriptions
         const channel = supabase.channel('institution_realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'faculty_subjects' }, fetchData)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, fetchData)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, fetchData)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_details' }, fetchData)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'faculty_subjects', filter: `institution_id=eq.${institutionId}` }, fetchData)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, fetchData) // classes might not have institution_id directly
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects', filter: `institution_id=eq.${institutionId}` }, fetchData)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_details', filter: `institution_id=eq.${institutionId}` }, fetchData)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `institution_id=eq.${institutionId}` }, fetchData)
             .subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [fetchData]);
+    }, [fetchData, institutionId]);
 
     // Derived State: subjects with populated staff
     // This maintains compatibility with the old "Subject" interface
@@ -226,34 +243,36 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
     const assignStaff = useCallback(async (classId: string, section: string, subjectId: string, staffIds: string[]) => {
         if (!institutionId) return;
         try {
-            // First, delete existing assignments for this tuple
-            // Note: This is simplified. In a real app, we might handle diffs. 
-            // Here we delete all for (class, section, subject) and re-insert.
-            // But 'faculty_subjects' logic: id is UUID.
-
-            // Delete old
+            // Updated to use assignment_type approach
+            // 1. Delete all 'subject_staff' for this subject/class/section
             const { error: deleteError } = await supabase
                 .from('faculty_subjects')
                 .delete()
-                .match({ institution_id: institutionId, class_id: classId, section: section, subject_id: subjectId });
+                .match({
+                    institution_id: institutionId,
+                    class_id: classId,
+                    section: section,
+                    subject_id: subjectId,
+                    assignment_type: 'subject_staff' // Critical!
+                });
 
             if (deleteError) throw deleteError;
 
-            // Insert new
+            // 2. Insert new
             if (staffIds.length > 0) {
                 const toInsert = staffIds.map(fid => ({
                     institution_id: institutionId,
                     class_id: classId,
                     section: section,
                     subject_id: subjectId,
-                    faculty_profile_id: fid
+                    faculty_profile_id: fid,
+                    assignment_type: 'subject_staff'
                 }));
                 const { error: insertError } = await supabase.from('faculty_subjects').insert(toInsert);
                 if (insertError) throw insertError;
             }
 
             toast.success("Staff assigned successfully!");
-            // Realtime will trigger refresh
         } catch (e: any) {
             console.error("Assign staff error:", e);
             toast.error(e.message || "Failed to assign staff");
@@ -267,16 +286,37 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
     const assignClassTeacher = useCallback(async (classId: string, section: string, teacherId: string) => {
         if (!institutionId) return;
         try {
-            // Update classes table
-            // We assume row exists. If not, error.
-            // Wait, we query by ID? Yes classId is ID.
-            const { error } = await supabase
-                .from('classes')
-                .update({ class_teacher_id: teacherId })
-                .eq('id', classId)
-                .eq('section', section); // redundant if id is PK, but safe
+            // Updated: Now writes to faculty_subjects with type 'class_teacher'
 
-            if (error) throw error;
+            // 1. Remove existing class teacher
+            const { error: deleteError } = await supabase
+                .from('faculty_subjects')
+                .delete()
+                .match({
+                    institution_id: institutionId,
+                    class_id: classId,
+                    section: section,
+                    assignment_type: 'class_teacher'
+                });
+
+            if (deleteError) throw deleteError;
+
+            // 2. Insert new (if teacherId is provided - could be unassignment)
+            if (teacherId) {
+                const { error: insertError } = await supabase
+                    .from('faculty_subjects')
+                    .insert({
+                        institution_id: institutionId,
+                        class_id: classId,
+                        section: section,
+                        faculty_profile_id: teacherId,
+                        assignment_type: 'class_teacher',
+                        subject_id: null // Explicitly null for class teacher
+                    });
+
+                if (insertError) throw insertError;
+            }
+
             toast.success("Class teacher assigned!");
         } catch (e: any) {
             console.error("Assign class teacher error:", e);
