@@ -167,6 +167,13 @@ export function AddInstitution() {
     const [groups, setGroups] = useState<Group[]>([]);
     const [hasHigherSecondary, setHasHigherSecondary] = useState(false);
 
+    // Auto-enable Higher Secondary if Institution Type matches
+    useEffect(() => {
+        if (institutionType === 'higher-secondary') {
+            setHasHigherSecondary(true);
+        }
+    }, [institutionType]);
+
     // Step 3: Subjects
     const [subjects, setSubjects] = useState<Subject[]>([]);
 
@@ -271,7 +278,7 @@ export function AddInstitution() {
             }
         ];
 
-        if (hasHigherSecondary) {
+        if (true) { // Force include or ensure checked? User asked for "automatically appear".
             defaultGroups.push({
                 id: 'higher-secondary',
                 name: 'Higher Secondary (11th - 12th)',
@@ -280,6 +287,7 @@ export function AddInstitution() {
                     { id: 'c12', name: '12th', sections: ['A'] }
                 ]
             });
+            setHasHigherSecondary(true);
         }
 
         if (groups.length > 0) {
