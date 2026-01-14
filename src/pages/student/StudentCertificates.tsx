@@ -1,138 +1,240 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Badge } from '@/components/common/Badge';
-import { useTranslation } from '@/i18n/TranslationContext';
-import { Award, Download, Calendar, Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+import { Badge } from '@/components/common/Badge';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { useQuery } from '@tanstack/react-query';
+import { Download, FileText, Calendar, User, Loader2, Award } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Certificate {
+    id: string;
+    category: string;
+    course_description: string;
+    file_url: string;
+    file_name: string;
+    file_size: number;
+    faculty_name: string;
+    class_name: string;
+    section: string;
+    uploaded_at: string;
+    status: string;
+}
 
 export function StudentCertificates() {
-    const { t } = useTranslation();
     const { user } = useAuth();
-    const [certificates, setCertificates] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        if (user?.institutionId) {
-            fetchCertificates();
-        }
-    }, [user?.institutionId]);
+    // Fetch certificates for the logged-in student
+    const { data: certificates = [], isLoading, refetch } = useQuery({
+        queryKey: ['student-certificates', user?.email],
+        queryFn: async () => {
+            if (!user?.email) {
+                console.log('[CERTIFICATES] No user email');
+                return [];
+            }
 
-    const fetchCertificates = async () => {
-        try {
-            setIsLoading(true);
+            console.log('[CERTIFICATES] Fetching certificates for:', user.email);
 
-            // 1. Get Student ID (safe check if auth.uid matches student.id or needs lookup)
-            const { data: studentData, error: studentError } = await supabase
-                .from('students')
-                .select('id')
-                .eq('id', user?.id)
-                .single();
-
-            // If not found by ID directly, we might need another strategy, but assuming auth.uid logic holds or user manually linked.
-            // For now, let's assume if studentData exists, use it. If not, maybe use user.id directly if that's how we linked insertion.
-            // In FacultyUpload, insert used `student_id` from the students table.
-
-            const studentId = studentData?.id || user?.id;
-
-            // 2. Fetch Certificates
-            const { data: certs, error: certsError } = await supabase
-                .from('student_certificates')
+            const { data, error } = await supabase
+                .from('certificates')
                 .select('*')
-                .eq('student_id', studentId)
-                .order('created_at', { ascending: false });
+                .eq('student_email', user.email)
+                .eq('status', 'active')
+                .order('uploaded_at', { ascending: false });
 
-            if (certsError) throw certsError;
-            setCertificates(certs || []);
+            if (error) {
+                console.error('[CERTIFICATES] Error fetching certificates:', error);
+                throw error;
+            }
 
+            console.log('[CERTIFICATES] Fetched certificates:', data?.length || 0);
+            return data || [];
+        },
+        enabled: !!user?.email,
+        refetchInterval: 30000, // Refetch every 30 seconds
+    });
+
+    // Subscribe to real-time updates
+    useEffect(() => {
+        if (!user?.email) return;
+
+        console.log('[CERTIFICATES] Setting up real-time subscription');
+
+        const channel = supabase
+            .channel('student-certificates-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'certificates',
+                    filter: `student_email=eq.${user.email}`
+                },
+                (payload) => {
+                    console.log('[CERTIFICATES] Real-time update received:', payload);
+                    refetch();
+
+                    if (payload.eventType === 'INSERT') {
+                        toast.success('New certificate added!');
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            console.log('[CERTIFICATES] Cleaning up real-time subscription');
+            supabase.removeChannel(channel);
+        };
+    }, [user?.email, refetch]);
+
+    const handleDownload = async (certificate: Certificate) => {
+        try {
+            console.log('[CERTIFICATES] Downloading:', certificate.file_name);
+
+            // Open the file URL in a new tab
+            window.open(certificate.file_url, '_blank');
+
+            toast.success('Download started!');
         } catch (error) {
-            console.error('Error fetching certificates:', error);
-        } finally {
-            setIsLoading(false);
+            console.error('[CERTIFICATES] Download error:', error);
+            toast.error('Failed to download certificate');
         }
     };
 
-    const handleDownload = (url: string) => {
-        window.open(url, '_blank');
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
     };
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    };
+
+    if (isLoading) {
+        return (
+            <StudentLayout>
+                <PageHeader title="My Certificates" subtitle="View and download your certificates" />
+                <div className="flex justify-center p-10">
+                    <Loader2 className="animate-spin w-8 h-8" />
+                </div>
+            </StudentLayout>
+        );
+    }
 
     return (
         <StudentLayout>
             <PageHeader
-                title={t.nav.certificates}
-                subtitle={t.dashboard.overview}
+                title="My Certificates"
+                subtitle="View and download your certificates"
             />
 
-            {isLoading ? (
-                <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>
-            ) : (
-                <>
-                    {certificates.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border border-dashed border-border">
-                            <Award className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p className="text-lg font-semibold">No Certificates Yet</p>
-                            <p className="text-sm">Certificates issued to you will appear here.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {certificates.map((cert) => (
-                                <div key={cert.id} className="dashboard-card hover:shadow-lg transition-shadow">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                                                <Award className="w-6 h-6 text-primary" />
-                                            </div>
-                                            <div>
-                                                <h3 className="font-semibold">{cert.title}</h3>
-                                                <p className="text-sm text-muted-foreground">{cert.course}</p>
-                                            </div>
+            <div className="p-4 space-y-4">
+                {certificates.length === 0 ? (
+                    <Card>
+                        <CardContent className="flex flex-col items-center justify-center p-12 text-center">
+                            <Award className="w-16 h-16 mb-4 text-muted-foreground" />
+                            <h2 className="text-xl font-semibold mb-2">No Certificates Yet</h2>
+                            <p className="text-muted-foreground">
+                                Your certificates will appear here once your teachers upload them.
+                            </p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {certificates.map((cert) => (
+                            <Card key={cert.id} className="hover:shadow-lg transition-shadow">
+                                <CardHeader className="pb-3">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <FileText className="w-5 h-5 text-primary" />
+                                            <CardTitle className="text-lg line-clamp-1">
+                                                {cert.category}
+                                            </CardTitle>
                                         </div>
-                                        <Badge variant="success">
-                                            Available
+                                        <Badge className="bg-success/10 text-success border-0">
+                                            Active
                                         </Badge>
                                     </div>
-
-                                    <div className="space-y-2 mb-4">
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-muted-foreground">Issue Date:</span>
-                                            <span className="font-medium flex items-center gap-1">
-                                                <Calendar className="w-3 h-3" />
-                                                {new Date(cert.issued_date || cert.created_at).toLocaleDateString()}
-                                            </span>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {/* Course Description */}
+                                    {cert.course_description && (
+                                        <div>
+                                            <p className="text-sm font-medium text-muted-foreground mb-1">
+                                                Course
+                                            </p>
+                                            <p className="text-sm line-clamp-2">
+                                                {cert.course_description}
+                                            </p>
                                         </div>
-                                        {cert.grade && (
-                                            <div className="flex items-center justify-between text-sm">
-                                                <span className="text-muted-foreground">Grade/Achievement:</span>
-                                                <span className="font-medium text-primary">{cert.grade}</span>
-                                            </div>
-                                        )}
+                                    )}
+
+                                    {/* Faculty Name */}
+                                    {cert.faculty_name && (
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <User className="w-4 h-4 text-muted-foreground" />
+                                            <span className="text-muted-foreground">Issued by:</span>
+                                            <span className="font-medium">{cert.faculty_name}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Upload Date */}
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Calendar className="w-4 h-4 text-muted-foreground" />
+                                        <span className="text-muted-foreground">
+                                            {formatDate(cert.uploaded_at)}
+                                        </span>
                                     </div>
 
-                                    <Button
-                                        className="w-full btn-primary flex items-center justify-center gap-2"
-                                        onClick={() => handleDownload(cert.file_url)}
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        Download Certificate
-                                    </Button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </>
-            )}
+                                    {/* File Info */}
+                                    <div className="pt-2 border-t">
+                                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                                            <span className="line-clamp-1">{cert.file_name}</span>
+                                            <span>{formatFileSize(cert.file_size)}</span>
+                                        </div>
 
-            {/* Info Box */}
-            <div className="mt-8 p-6 bg-muted/50 rounded-lg border border-border">
-                <h4 className="font-semibold mb-2">Certificate Information</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• Certificates are issued within 2 weeks of course completion</li>
-                    <li>• All certificates are digitally signed and verifiable</li>
-                    <li>• Downloaded certificates are in PDF format</li>
-                    <li>• For physical certificates, contact the administration office</li>
-                </ul>
+                                        <Button
+                                            onClick={() => handleDownload(cert)}
+                                            className="w-full"
+                                            size="sm"
+                                        >
+                                            <Download className="w-4 h-4 mr-2" />
+                                            Download Certificate
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+
+                {/* Summary Stats */}
+                {certificates.length > 0 && (
+                    <Card className="bg-primary/5 border-primary/20">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Award className="w-5 h-5 text-primary" />
+                                    <span className="font-semibold">
+                                        Total Certificates: {certificates.length}
+                                    </span>
+                                </div>
+                                <Badge className="bg-primary text-primary-foreground">
+                                    All Active
+                                </Badge>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </StudentLayout>
     );

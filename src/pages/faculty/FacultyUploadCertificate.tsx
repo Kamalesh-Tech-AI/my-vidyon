@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Upload, FileText, CheckCircle, X, Loader2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle, X, Loader2, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export function FacultyUploadCertificate() {
     const { user } = useAuth();
@@ -17,84 +18,123 @@ export function FacultyUploadCertificate() {
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [classes, setClasses] = useState<any[]>([]);
-    const [availableSections, setAvailableSections] = useState<string[]>([]);
+    const [facultyClass, setFacultyClass] = useState<{ class_name: string; section: string; class_id: string } | null>(null);
     const [students, setStudents] = useState<any[]>([]);
+    const [isLoadingClass, setIsLoadingClass] = useState(true);
 
     const [formData, setFormData] = useState({
-        classId: '',
-        section: '',
-        studentId: '', // selected student ID
-        title: '', // Category/Title
-        description: '', // Course/Description
+        studentId: '',
+        studentEmail: '',
+        studentName: '',
+        title: '',
+        description: '',
         file: null as File | null
     });
 
+    // Fetch faculty's assigned class/section
     useEffect(() => {
-        if (user?.institutionId) {
-            fetchClasses();
-        }
-    }, [user?.institutionId]);
+        const fetchFacultyClass = async () => {
+            if (!user?.id) return;
 
-    const fetchClasses = async () => {
-        try {
-            const { data: groupsWithClasses, error } = await supabase
-                .from('groups')
-                .select('classes(id, name, sections)')
-                .eq('institution_id', user?.institutionId);
+            console.log('[CERTIFICATE] Fetching faculty class for:', user.email);
+            setIsLoadingClass(true);
 
-            if (error) throw error;
+            try {
+                // Try to get faculty's class from timetable_slots (most common class they teach)
+                const { data: timetableData, error: timetableError } = await supabase
+                    .from('timetable_slots')
+                    .select(`
+                        class_id,
+                        section,
+                        classes:class_id (name)
+                    `)
+                    .eq('faculty_id', user.id)
+                    .limit(10);
 
-            if (groupsWithClasses) {
-                const flatClasses = groupsWithClasses.flatMap(g => g.classes);
-                setClasses(flatClasses);
+                if (timetableError) {
+                    console.error('[CERTIFICATE] Error fetching timetable:', timetableError);
+                }
+
+                if (timetableData && timetableData.length > 0) {
+                    // Get the most common class/section combination
+                    const classCounts: { [key: string]: { count: number; class_id: string; section: string; class_name: string } } = {};
+
+                    timetableData.forEach((slot: any) => {
+                        if (slot.class_id && slot.section && slot.classes) {
+                            const key = `${slot.class_id}-${slot.section}`;
+                            if (!classCounts[key]) {
+                                classCounts[key] = {
+                                    count: 0,
+                                    class_id: slot.class_id,
+                                    section: slot.section,
+                                    class_name: slot.classes.name
+                                };
+                            }
+                            classCounts[key].count++;
+                        }
+                    });
+
+                    // Get the class with highest count
+                    const mostCommon = Object.values(classCounts).sort((a, b) => b.count - a.count)[0];
+
+                    if (mostCommon) {
+                        console.log('[CERTIFICATE] Faculty class detected:', mostCommon);
+                        setFacultyClass({
+                            class_name: mostCommon.class_name,
+                            section: mostCommon.section,
+                            class_id: mostCommon.class_id
+                        });
+                    } else {
+                        console.log('[CERTIFICATE] No class found in timetable');
+                        toast.error('No class assigned to you. Please contact admin.');
+                    }
+                } else {
+                    console.log('[CERTIFICATE] No timetable slots found for faculty');
+                    toast.error('No class assigned to you. Please contact admin.');
+                }
+            } catch (error) {
+                console.error('[CERTIFICATE] Error:', error);
+                toast.error('Failed to load your class information');
+            } finally {
+                setIsLoadingClass(false);
             }
-        } catch (error) {
-            console.error('Error fetching classes:', error);
-        }
-    };
+        };
 
-    const handleClassChange = (classId: string) => {
-        const selectedClass = classes.find(c => c.id === classId);
-        const sections = selectedClass?.sections || [];
+        fetchFacultyClass();
+    }, [user?.id]);
 
-        setFormData(prev => ({ ...prev, classId, section: '', studentId: '' }));
-        setAvailableSections(sections);
-        setStudents([]); // Clear students until section is selected
-    };
+    // Fetch students when faculty class is detected
+    useEffect(() => {
+        const fetchStudents = async () => {
+            if (!facultyClass || !user?.institutionId) return;
 
-    const handleSectionChange = async (section: string) => {
-        setFormData(prev => ({ ...prev, section, studentId: '' }));
-        setStudents([]);
+            console.log('[CERTIFICATE] Fetching students for:', facultyClass.class_name, facultyClass.section);
 
-        if (!formData.classId || !section) return;
+            try {
+                const { data, error } = await supabase
+                    .from('students')
+                    .select('id, name, email, register_number, class_name, section')
+                    .eq('institution_id', user.institutionId)
+                    .eq('class_name', facultyClass.class_name)
+                    .eq('section', facultyClass.section)
+                    .order('name');
 
-        const selectedClass = classes.find(c => c.id === formData.classId);
-        if (!selectedClass) {
-            console.error("Selected class not found in classes list");
-            return;
-        }
+                if (error) throw error;
 
-        try {
-            console.log(`Fetching students for: Class '${selectedClass.name}', Section '${section}'`);
+                console.log('[CERTIFICATE] Students found:', data?.length || 0);
+                setStudents(data || []);
 
-            const query = supabase
-                .from('students')
-                .select('id, name, admission_no')
-                .eq('institution_id', user?.institutionId)
-                .eq('class_name', selectedClass.name)
-                .eq('section', section);
+                if (!data || data.length === 0) {
+                    toast.info(`No students found in ${facultyClass.class_name} ${facultyClass.section}`);
+                }
+            } catch (error) {
+                console.error('[CERTIFICATE] Error fetching students:', error);
+                toast.error('Could not fetch students');
+            }
+        };
 
-            const { data, error } = await query;
-
-            if (error) throw error;
-            console.log("Students found:", data?.length);
-            setStudents(data || []);
-        } catch (error) {
-            console.error('Error fetching students:', error);
-            toast.error('Could not fetch students');
-        }
-    };
+        fetchStudents();
+    }, [facultyClass, user?.institutionId]);
 
     const validateFile = (file: File): boolean => {
         const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
@@ -156,10 +196,20 @@ export function FacultyUploadCertificate() {
         toast.info('File removed');
     };
 
+    const handleStudentChange = (studentId: string) => {
+        const student = students.find(s => s.id === studentId);
+        setFormData(prev => ({
+            ...prev,
+            studentId,
+            studentEmail: student?.email || '',
+            studentName: student?.name || ''
+        }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!formData.studentId || !formData.title || !uploadedFile || !user?.institutionId) {
+        if (!formData.studentId || !formData.title || !uploadedFile || !user?.institutionId || !facultyClass) {
             toast.error('Please fill all required fields');
             return;
         }
@@ -167,128 +217,155 @@ export function FacultyUploadCertificate() {
         setIsSubmitting(true);
 
         try {
-            // 1. Upload File
+            console.log('[CERTIFICATE] Starting upload process...');
+
+            // 1. Upload File to Supabase Storage
             const file = uploadedFile;
             const fileExt = file.name.split('.').pop();
             const fileName = `cert-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-            const filePath = `${user.institutionId}/${fileName}`;
+            const filePath = `${user.institutionId}/${formData.studentId}/${fileName}`;
+
+            console.log('[CERTIFICATE] Uploading file to:', filePath);
 
             const { error: uploadError } = await supabase.storage
                 .from('certificates')
                 .upload(filePath, file);
 
-            if (uploadError) throw uploadError;
+            if (uploadError) {
+                console.error('[CERTIFICATE] Upload error:', uploadError);
+                throw uploadError;
+            }
 
+            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('certificates')
                 .getPublicUrl(filePath);
 
-            // 2. Insert Record
+            console.log('[CERTIFICATE] File uploaded, public URL:', publicUrl);
+
+            // 2. Insert Certificate Record
+            const certificateData = {
+                student_id: formData.studentId,
+                student_email: formData.studentEmail,
+                student_name: formData.studentName,
+                faculty_id: user.id,
+                faculty_name: user.fullName || user.email,
+                institution_id: user.institutionId,
+                category: formData.title,
+                course_description: formData.description,
+                file_url: publicUrl,
+                file_name: file.name,
+                file_size: file.size,
+                file_type: file.type,
+                class_name: facultyClass.class_name,
+                section: facultyClass.section,
+                uploaded_by: user.email,
+                status: 'active'
+            };
+
+            console.log('[CERTIFICATE] Inserting certificate record:', certificateData);
+
             const { error: insertError } = await supabase
-                .from('student_certificates')
-                .insert({
-                    title: formData.title,
-                    student_id: formData.studentId,
-                    course: formData.description,
-                    file_url: publicUrl,
-                    institution_id: user.institutionId,
-                    uploaded_by: user.id,
-                    issued_date: new Date().toISOString(),
-                    status: 'available',
-                    category: formData.title
-                });
+                .from('certificates')
+                .insert(certificateData);
 
-            if (insertError) throw insertError;
+            if (insertError) {
+                console.error('[CERTIFICATE] Insert error:', insertError);
+                throw insertError;
+            }
 
+            console.log('[CERTIFICATE] Certificate uploaded successfully!');
             toast.success('Certificate uploaded successfully!');
 
             // Reset form
             setFormData({
-                classId: '',
-                section: '',
                 studentId: '',
+                studentEmail: '',
+                studentName: '',
                 title: '',
                 description: '',
                 file: null
             });
             setUploadedFile(null);
-            setStudents([]);
-            setAvailableSections([]);
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
 
         } catch (error: any) {
-            console.error('Upload failed:', error);
+            console.error('[CERTIFICATE] Upload failed:', error);
             toast.error(`Upload failed: ${error.message}`);
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    if (isLoadingClass) {
+        return (
+            <FacultyLayout>
+                <PageHeader
+                    title="Upload Certificate"
+                    subtitle="Issue new certificates to students"
+                />
+                <div className="flex justify-center p-10">
+                    <Loader2 className="animate-spin w-8 h-8" />
+                </div>
+            </FacultyLayout>
+        );
+    }
+
+    if (!facultyClass) {
+        return (
+            <FacultyLayout>
+                <PageHeader
+                    title="Upload Certificate"
+                    subtitle="Issue new certificates to students"
+                />
+                <div className="max-w-2xl mx-auto">
+                    <Alert>
+                        <Info className="h-4 w-4" />
+                        <AlertDescription>
+                            No class assigned to you. Please contact your institution administrator to assign you to a class.
+                        </AlertDescription>
+                    </Alert>
+                </div>
+            </FacultyLayout>
+        );
+    }
+
     return (
         <FacultyLayout>
             <PageHeader
                 title="Upload Certificate"
-                subtitle="Issue new certificates to students"
+                subtitle={`Issue certificates to ${facultyClass.class_name} ${facultyClass.section} students`}
             />
 
             <div className="max-w-2xl mx-auto dashboard-card">
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-4">
 
-                        {/* Class Selection */}
-                        <div className="space-y-2">
-                            <Label htmlFor="studentClass">Select Class</Label>
-                            <Select
-                                value={formData.classId}
-                                onValueChange={handleClassChange}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Class" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {classes.map(cls => (
-                                        <SelectItem key={cls.id} value={cls.id}>{cls.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Section Selection */}
-                        <div className="space-y-2">
-                            <Label htmlFor="studentSection">Select Section</Label>
-                            <Select
-                                value={formData.section}
-                                onValueChange={handleSectionChange}
-                                disabled={!formData.classId || availableSections.length === 0}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select Section" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {availableSections.map(sec => (
-                                        <SelectItem key={sec} value={sec}>{sec}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        {/* Class and Section (Read-only) */}
+                        <Alert className="bg-primary/5 border-primary/20">
+                            <Info className="h-4 w-4" />
+                            <AlertDescription>
+                                Your assigned class: <strong>{facultyClass.class_name} - Section {facultyClass.section}</strong>
+                            </AlertDescription>
+                        </Alert>
 
                         {/* Student Selection */}
                         <div className="space-y-2">
                             <Label htmlFor="student">Select Student</Label>
                             <Select
                                 value={formData.studentId}
-                                onValueChange={(val) => setFormData(prev => ({ ...prev, studentId: val }))}
-                                disabled={!formData.section || students.length === 0}
+                                onValueChange={handleStudentChange}
+                                disabled={students.length === 0}
                             >
                                 <SelectTrigger>
-                                    <SelectValue placeholder={!formData.section ? "Select Section first" : (students.length === 0 ? "No students found" : "Select Student")} />
+                                    <SelectValue placeholder={students.length === 0 ? "No students found" : "Select Student"} />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {students.map(std => (
                                         <SelectItem key={std.id} value={std.id}>
-                                            {std.name} ({std.admission_no})
+                                            {std.name} {std.register_number ? `(${std.register_number})` : ''}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
