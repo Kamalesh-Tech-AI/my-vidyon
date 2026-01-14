@@ -135,7 +135,12 @@ export function InstitutionTimetable() {
     } = useQuery({
         queryKey: ['faculty-timetable', selectedFaculty?.id],
         queryFn: async () => {
-            if (!selectedFaculty?.id) return [];
+            if (!selectedFaculty?.id) {
+                console.log('[INSTITUTION] No faculty selected');
+                return [];
+            }
+
+            console.log('[INSTITUTION] Fetching timetable for faculty:', selectedFaculty.full_name, selectedFaculty.id);
 
             const { data, error } = await supabase
                 .from('timetable_slots')
@@ -149,9 +154,12 @@ export function InstitutionTimetable() {
                 .order('period_index');
 
             if (error) {
-                console.error('Error fetching timetable:', error);
+                console.error('[INSTITUTION] Error fetching timetable:', error);
                 throw error;
             }
+
+            console.log('[INSTITUTION] Fetched timetable slots:', data);
+            console.log('[INSTITUTION] Number of slots:', data?.length || 0);
             return data || [];
         },
         enabled: !!selectedFaculty?.id,
@@ -186,8 +194,21 @@ export function InstitutionTimetable() {
     const saveSlotMutation = useMutation({
         mutationFn: async () => {
             if (!editingSlot || !selectedFaculty?.id || !user?.institutionId) {
+                console.error('[INSTITUTION] Missing required data:', {
+                    hasEditingSlot: !!editingSlot,
+                    hasFaculty: !!selectedFaculty?.id,
+                    hasInstitution: !!user?.institutionId
+                });
                 throw new Error('Missing required data');
             }
+
+            console.log('[INSTITUTION] Saving slot:', {
+                day: editingSlot.day,
+                period: editingSlot.period,
+                faculty: selectedFaculty.full_name,
+                faculty_id: selectedFaculty.id,
+                data: editingSlot.data
+            });
 
             // Get or create config
             const { data: existingConfig } = await supabase
@@ -199,6 +220,7 @@ export function InstitutionTimetable() {
 
             let configId = existingConfig?.id;
             if (!configId) {
+                console.log('[INSTITUTION] Creating new timetable config');
                 const { data: newConfig } = await supabase
                     .from('timetable_configs')
                     .insert({
@@ -210,19 +232,29 @@ export function InstitutionTimetable() {
                     .select('id')
                     .single();
                 configId = newConfig?.id;
+                console.log('[INSTITUTION] Created config:', configId);
+            } else {
+                console.log('[INSTITUTION] Using existing config:', configId);
             }
 
             // Delete existing slot for this day/period
-            await supabase
+            console.log('[INSTITUTION] Deleting existing slot...');
+            const { error: deleteError } = await supabase
                 .from('timetable_slots')
                 .delete()
                 .eq('faculty_id', selectedFaculty.id)
                 .eq('day_of_week', editingSlot.day)
                 .eq('period_index', editingSlot.period);
 
+            if (deleteError) {
+                console.error('[INSTITUTION] Delete error:', deleteError);
+            } else {
+                console.log('[INSTITUTION] Deleted existing slot (if any)');
+            }
+
             // Insert new slot if subject is selected
             if (editingSlot.data.subject_id) {
-                await supabase.from('timetable_slots').insert({
+                const slotData = {
                     config_id: configId,
                     faculty_id: selectedFaculty.id,
                     day_of_week: editingSlot.day,
@@ -234,12 +266,32 @@ export function InstitutionTimetable() {
                     end_time: editingSlot.data.end_time || '10:00',
                     room_number: editingSlot.data.room_number,
                     is_break: false,
-                });
+                };
+
+                console.log('[INSTITUTION] Inserting slot:', slotData);
+                const { data: insertedData, error: insertError } = await supabase
+                    .from('timetable_slots')
+                    .insert(slotData)
+                    .select();
+
+                if (insertError) {
+                    console.error('[INSTITUTION] Insert error:', insertError);
+                    throw insertError;
+                }
+
+                console.log('[INSTITUTION] Inserted successfully:', insertedData);
+            } else {
+                console.log('[INSTITUTION] No subject selected, slot deleted only');
             }
         },
         onSuccess: () => {
+            console.log('Slot saved successfully, refetching timetable...');
             toast.success('Slot saved successfully');
-            queryClient.invalidateQueries({ queryKey: ['faculty-timetable'] });
+            // Invalidate and refetch the specific faculty's timetable
+            queryClient.invalidateQueries({ queryKey: ['faculty-timetable', selectedFaculty?.id] });
+            queryClient.refetchQueries({ queryKey: ['faculty-timetable', selectedFaculty?.id] });
+            // Also invalidate the faculty's "My Schedule" view
+            queryClient.invalidateQueries({ queryKey: ['faculty-my-schedule', selectedFaculty?.id] });
             setIsEditDialogOpen(false);
             setEditingSlot(null);
         },
