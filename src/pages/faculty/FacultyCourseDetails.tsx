@@ -8,6 +8,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, Download, Save, Search, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const initialSubmissions = [
     { id: 1, student: 'John Smith', rollNo: '101', assignment: 'Algebra Problem Set', submittedOn: 'Dec 21, 2025', status: 'submitted', file: 'algebra_pset.pdf', grade: '' },
@@ -21,6 +27,7 @@ export function FacultyCourseDetails() {
     const { courseId } = useParams();
     const navigate = useNavigate();
     const [submissions, setSubmissions] = useState(initialSubmissions);
+    const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'submitted' | 'late'>('all');
 
     const handleGradeChange = (id: number, value: string) => {
         setSubmissions(submissions.map(s => s.id === id ? { ...s, grade: value } : s));
@@ -29,6 +36,11 @@ export function FacultyCourseDetails() {
     const handleSaveGrades = () => {
         toast.success("Grades saved successfully");
     };
+
+    // Filter submissions based on selected status
+    const filteredSubmissions = filterStatus === 'all'
+        ? submissions
+        : submissions.filter(s => s.status === filterStatus);
 
     const columns = [
         { key: 'student', header: 'Student Name' },
@@ -94,10 +106,28 @@ export function FacultyCourseDetails() {
                         />
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" className="flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            Filter
-                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="flex items-center gap-2">
+                                    <Filter className="w-4 h-4" />
+                                    Filter: {filterStatus === 'all' ? 'All' : filterStatus.charAt(0).toUpperCase() + filterStatus.slice(1)}
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setFilterStatus('all')}>
+                                    All Submissions
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setFilterStatus('pending')}>
+                                    Pending
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setFilterStatus('submitted')}>
+                                    Submitted
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setFilterStatus('late')}>
+                                    Late
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button className="btn-primary flex items-center gap-2" onClick={handleSaveGrades}>
                             <Save className="w-4 h-4" />
                             Save Grades
@@ -105,7 +135,7 @@ export function FacultyCourseDetails() {
                     </div>
                 </div>
 
-                <DataTable columns={columns} data={submissions} />
+                <DataTable columns={columns} data={filteredSubmissions} />
             </div>
         </FacultyLayout>
     );

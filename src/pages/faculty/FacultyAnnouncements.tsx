@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Megaphone, Plus, Calendar, Bell, Users, MoreVertical, Loader2 } from 'lucide-react';
+import { Megaphone, Plus, Calendar, Bell, Users, Loader2 } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -192,9 +192,6 @@ export function FacultyAnnouncements() {
                                         </div>
                                     </div>
                                 </div>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                    <MoreVertical className="w-4 h-4" />
-                                </Button>
                             </div>
                             <p className="text-sm text-gray-700 leading-relaxed">{announcement.content}</p>
                         </div>

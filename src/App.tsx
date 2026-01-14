@@ -54,6 +54,8 @@ import { FacultySettings } from "./pages/faculty/FacultySettings";
 import { FacultyCourseDetails } from "./pages/faculty/FacultyCourseDetails";
 import { TimetableManagement } from "./pages/faculty/TimetableManagement";
 import { ReviewSubmission } from "./pages/faculty/ReviewSubmission";
+import { UpdateAssignment } from "./pages/faculty/UpdateAssignment";
+import { StudentProfile } from "./pages/faculty/StudentProfile";
 
 // Institution Pages
 import { InstitutionDashboard } from "./pages/institution/InstitutionDashboard";
@@ -71,6 +73,8 @@ import { InstitutionFees } from "./pages/institution/InstitutionFees";
 import { InstitutionAnalytics } from "./pages/institution/InstitutionAnalytics";
 import { InstitutionReports } from "./pages/institution/InstitutionReports";
 import { InstitutionSettings } from "./pages/institution/InstitutionSettings";
+import { InstitutionTimetable } from "./pages/institution/InstitutionTimetable";
+import { InstitutionTimetableEdit } from "./pages/institution/InstitutionTimetableEdit";
 
 import { InstitutionFacultyAssigning } from "./pages/institution/InstitutionFacultyAssigning";
 import { InstitutionProvider } from "@/context/InstitutionContext";
@@ -142,10 +146,12 @@ const App = () => {
                   <Route path="/faculty/attendance" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyAttendance /></ProtectedRoute>} />
                   <Route path="/faculty/assignments" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyAssignments /></ProtectedRoute>} />
                   <Route path="/faculty/assignments/create" element={<ProtectedRoute allowedRoles={['faculty']}><CreateAssignment /></ProtectedRoute>} />
+                  <Route path="/faculty/assignments/edit/:id" element={<ProtectedRoute allowedRoles={['faculty']}><UpdateAssignment /></ProtectedRoute>} />
                   <Route path="/faculty/marks" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyMarks /></ProtectedRoute>} />
                   <Route path="/faculty/exams" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyExams /></ProtectedRoute>} />
 
                   <Route path="/faculty/students" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyStudents /></ProtectedRoute>} />
+                  <Route path="/faculty/students/:rollNo" element={<ProtectedRoute allowedRoles={['faculty']}><StudentProfile /></ProtectedRoute>} />
                   <Route path="/faculty/announcements" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyAnnouncements /></ProtectedRoute>} />
                   <Route path="/faculty/upload-certificate" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyUploadCertificate /></ProtectedRoute>} />
                   <Route path="/faculty/leave" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyLeave /></ProtectedRoute>} />
@@ -169,6 +175,8 @@ const App = () => {
                   <Route path="/institution/add-student" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionAddStudent /></ProtectedRoute>} />
 
                   <Route path="/institution/fees" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFees /></ProtectedRoute>} />
+                  <Route path="/institution/timetable" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionTimetable /></ProtectedRoute>} />
+                  <Route path="/institution/timetable/edit/:facultyId" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionTimetableEdit /></ProtectedRoute>} />
                   <Route path="/institution/analytics" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionAnalytics /></ProtectedRoute>} />
                   <Route path="/institution/reports" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionReports /></ProtectedRoute>} />
                   <Route path="/institution/settings" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionSettings /></ProtectedRoute>} />

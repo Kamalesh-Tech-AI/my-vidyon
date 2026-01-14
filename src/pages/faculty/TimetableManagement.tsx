@@ -1,286 +1,407 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { toast } from 'sonner';
-import { Loader2, Plus, Save, Trash2, Clock, Calendar } from 'lucide-react';
-import { PageHeader } from '@/components/common/PageHeader';
+import { useState } from 'react';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
+import { PageHeader } from '@/components/common/PageHeader';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/context/AuthContext';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
+import Loader from '@/components/common/Loader';
+import { useMinimumLoadingTime } from '@/hooks/useMinimumLoadingTime';
+import { Calendar, Clock, BookOpen, Save, Trash2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/common/Badge';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
 
-interface TimetableConfig {
-    id?: string;
-    class_id: string;
-    section: string;
-    days_of_week: string[];
-    periods_per_day: number;
-    period_duration_minutes: number;
-    start_time: string;
-    break_configs: any[];
-}
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-interface TimetableSlot {
-    id?: string;
-    day_of_week: string;
-    period_index: number;
-    start_time: string;
-    end_time: string;
-    subject_id?: string;
-    faculty_id?: string;
-    is_break?: boolean;
-    break_name?: string;
+interface EditingSlot {
+    day: string;
+    period: number;
+    data: any;
 }
 
 export function TimetableManagement() {
     const { user } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
+    const queryClient = useQueryClient();
+    const [editingSlot, setEditingSlot] = useState<EditingSlot | null>(null);
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+    const [deleteConfirm, setDeleteConfirm] = useState<{ day: string; period: number } | null>(null);
 
-    // Faculty's assigned class info
-    const [classInfo, setClassInfo] = useState<{ classId: string, className: string, section: string } | null>(null);
+    // Fetch faculty's personal schedule (created by institution)
+    const { data: mySchedule = [], isLoading: isLoadingSchedule } = useQuery({
+        queryKey: ['faculty-my-schedule', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return [];
 
-    // Data State
-    const [config, setConfig] = useState<TimetableConfig | null>(null);
-    const [slots, setSlots] = useState<TimetableSlot[]>([]);
-    const [subjects, setSubjects] = useState<any[]>([]);
-    const [faculties, setFaculties] = useState<any[]>([]);
+            const { data, error } = await supabase
+                .from('timetable_slots')
+                .select(`
+                    *,
+                    subjects:subject_id (name),
+                    classes:class_id (name)
+                `)
+                .eq('faculty_id', user.id)
+                .order('day_of_week')
+                .order('period_index');
 
-    // Config Form State
-    const [configForm, setConfigForm] = useState({
-        periods: 8,
-        duration: 45,
-        startTime: '09:00',
-        days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-    });
-
-    useEffect(() => {
-        if (user) {
-            fetchFacultyClass();
-        }
-    }, [user]);
-
-    const fetchFacultyClass = async () => {
-        try {
-            setLoading(true);
-            // 1. Get Faculty's Class Assignment from staff_details
-            const { data: staffDetails, error: staffError } = await supabase
-                .from('staff_details')
-                .select('*')
-                .eq('profile_id', user?.id)
-                .single();
-
-            if (staffError) throw staffError;
-
-            if (!staffDetails || !staffDetails.class_assigned) {
-                setLoading(false);
-                return; // Not a class teacher or not assigned
+            if (error) {
+                console.error('Error fetching my schedule:', error);
+                return [];
             }
 
-            // 2. Resolve Class ID from Name (since staff_details stores name currently)
-            // This part assumes we can map name back to ID. 
-            // Ideally staff_details should store ID, but based on previous files it uses text.
-            // We will try to find the class by name.
-            const { data: classData, error: classError } = await supabase
+            return data || [];
+        },
+        enabled: !!user?.id,
+    });
+
+    // Fetch faculty's class assignment (optional - not required for timetable to work)
+    const { data: staffDetails } = useQuery({
+        queryKey: ['faculty-assignment', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return null;
+
+            const { data, error } = await supabase
+                .from('staff_details')
+                .select('*')
+                .eq('profile_id', user.id)
+                .maybeSingle();
+
+            if (error) {
+                console.log('Staff details not found (optional):', error);
+                return null;
+            }
+            return data;
+        },
+        enabled: !!user?.id,
+        retry: false,
+    });
+
+    // Fetch class details (optional)
+    const { data: classDetails } = useQuery({
+        queryKey: ['class-details', staffDetails?.class_assigned],
+        queryFn: async () => {
+            if (!staffDetails?.class_assigned) return null;
+
+            const { data, error } = await supabase
                 .from('classes')
                 .select('id, name')
                 .eq('name', staffDetails.class_assigned)
+                .maybeSingle();
+
+            if (error) {
+                console.log('Class details not found (optional):', error);
+                return null;
+            }
+            return data;
+        },
+        enabled: !!staffDetails?.class_assigned,
+        retry: false,
+    });
+
+    // Fetch subjects
+    const { data: subjects = [] } = useQuery({
+        queryKey: ['faculty-subjects'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('subjects')
+                .select('id, name');
+            if (error) {
+                console.error('Error fetching subjects:', error);
+                return [];
+            }
+            return data || [];
+        },
+    });
+
+    // Fetch all faculty members for staff selection
+    const { data: allFaculty = [] } = useQuery({
+        queryKey: ['all-faculty', user?.institutionId],
+        queryFn: async () => {
+            if (!user?.institutionId) return [];
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, full_name')
+                .eq('institution_id', user.institutionId)
+                .eq('role', 'faculty')
+                .order('full_name');
+            if (error) {
+                console.error('Error fetching faculty:', error);
+                return [];
+            }
+            return data || [];
+        },
+        enabled: !!user?.institutionId,
+    });
+
+    // Fetch class timetable (for editing) - Shows all slots for 10th A
+    const { data: classTimetable = [], isLoading: isLoadingClassTimetable } = useQuery({
+        queryKey: ['class-timetable-10th-a'],
+        queryFn: async () => {
+            console.log('Fetching class timetable for 10th A...');
+            // Get the class_id for "10th"
+            const { data: tenthClass } = await supabase
+                .from('classes')
+                .select('id')
+                .eq('name', '10th')
+                .limit(1)
                 .single();
 
-            if (classError && classError.code !== 'PGRST116') throw classError;
-
-            if (classData) {
-                setClassInfo({
-                    classId: classData.id,
-                    className: staffDetails.class_assigned,
-                    section: staffDetails.section_assigned || 'A' // Default if missing
-                });
-
-                // Fetch Config & Master Data
-                await Promise.all([
-                    fetchTimetableConfig(classData.id, staffDetails.section_assigned || 'A'),
-                    fetchSubjects(classData.id, staffDetails.class_assigned), // Pass name for compatibility
-                    fetchFaculties(staffDetails.institution_id)
-                ]);
+            if (!tenthClass) {
+                console.error('10th class not found');
+                return [];
             }
 
-        } catch (error) {
-            console.error('Error fetching class info:', error);
-            toast.error('Failed to load class information');
-        } finally {
-            setLoading(false);
-        }
-    };
+            console.log('10th class ID:', tenthClass.id);
 
-    const fetchTimetableConfig = async (classId: string, section: string) => {
-        const { data } = await supabase
-            .from('timetable_configs')
-            .select('*')
-            .eq('class_id', classId)
-            .eq('section', section)
-            .single();
-
-        if (data) {
-            setConfig(data);
-            setConfigForm({
-                periods: data.periods_per_day,
-                duration: data.period_duration_minutes,
-                startTime: data.start_time.substring(0, 5), // HH:MM
-                days: data.days_of_week
-            });
-            // Fetch Slots if config exists
-            const { data: slotData } = await supabase
+            // Get all slots for 10th A (regardless of which faculty created them)
+            const { data, error } = await supabase
                 .from('timetable_slots')
-                .select('*')
-                .eq('config_id', data.id);
-            setSlots(slotData || []);
-        }
-    };
+                .select(`
+                    *,
+                    subjects:subject_id (name),
+                    profiles:faculty_id (full_name)
+                `)
+                .eq('class_id', tenthClass.id)
+                .eq('section', 'A')
+                .order('day_of_week')
+                .order('period_index');
 
-    const fetchSubjects = async (classId: string, className: string) => {
-        // Try matching by ID first, then Name
-        const { data } = await supabase
-            .from('subjects')
-            .select('*')
-            .or(`class_name.eq.${className}`); // Simplified for MVP
-        setSubjects(data || []);
-    };
-
-    const fetchFaculties = async (institutionId: string) => {
-        const { data } = await supabase
-            .from('profiles')
-            .select('id, full_name')
-            .eq('institution_id', institutionId)
-            .eq('role', 'faculty');
-        setFaculties(data || []);
-    };
-
-    const handleSaveConfig = async () => {
-        if (!classInfo) return;
-        setSaving(true);
-        try {
-            const payload = {
-                institution_id: (user as any)?.user_metadata?.institution_id || (user as any)?.institution_id,
-                class_id: classInfo.classId,
-                section: classInfo.section,
-                periods_per_day: configForm.periods,
-                period_duration_minutes: configForm.duration,
-                start_time: configForm.startTime,
-                days_of_week: configForm.days
-            };
-
-            let result;
-            if (config?.id) {
-                result = await supabase
-                    .from('timetable_configs')
-                    .update(payload)
-                    .eq('id', config.id)
-                    .select()
-                    .single();
-            } else {
-                result = await supabase
-                    .from('timetable_configs')
-                    .insert(payload)
-                    .select()
-                    .single();
+            if (error) {
+                console.error('Error fetching class timetable:', error);
+                return [];
             }
 
-            if (result.error) throw result.error;
-            setConfig(result.data);
-            toast.success("Timetable structure saved!");
+            console.log('Fetched class timetable slots:', data);
+            return data || [];
+        },
+    });
 
-            // Regenerate empty slots locally if needed or just let user edit
-        } catch (err: any) {
-            toast.error("Failed to save config: " + err.message);
-        } finally {
-            setSaving(false);
-        }
-    };
+    // Convert array to object for easier lookup
+    const classTimetableData: { [key: string]: any } = {};
+    classTimetable.forEach((slot: any) => {
+        const key = `${slot.day_of_week}-${slot.period_index}`;
+        classTimetableData[key] = slot;
+    });
 
-    const handleUpdateSlot = async (day: string, periodIndex: number, field: string, value: any) => {
-        if (!config?.id) return;
+    const myScheduleData: { [key: string]: any } = {};
+    mySchedule.forEach((slot: any) => {
+        const key = `${slot.day_of_week}-${slot.period_index}`;
+        myScheduleData[key] = slot;
+    });
 
-        // Find existing slot or create mock
-        const existingSlot = slots.find(s => s.day_of_week === day && s.period_index === periodIndex);
-        const newSlot = { ...existingSlot };
+    // Save class timetable slot
+    const saveSlotMutation = useMutation({
+        mutationFn: async () => {
+            if (!editingSlot || !user?.id) {
+                throw new Error('Missing required data');
+            }
 
-        if (field === 'subject_id') newSlot.subject_id = value;
-        if (field === 'faculty_id') newSlot.faculty_id = value;
+            console.log('Saving slot:', editingSlot);
 
-        // Optimistic update
-        const updatedSlots = slots.filter(s => !(s.day_of_week === day && s.period_index === periodIndex));
-        updatedSlots.push({
-            ...newSlot,
-            config_id: config.id,
-            day_of_week: day,
-            period_index: periodIndex,
-            // Calculate times roughly for now (backend/logic should handle this strictly but for UI we simulate)
-            start_time: '00:00',
-            end_time: '00:00'
-        } as TimetableSlot);
-        setSlots(updatedSlots);
+            // Get the class_id for "10th"
+            const { data: tenthClass } = await supabase
+                .from('classes')
+                .select('id')
+                .eq('name', '10th')
+                .limit(1)
+                .single();
 
-        // Save to DB (Auto-save for slots)
-        try {
+            if (!tenthClass) {
+                throw new Error('10th class not found in database');
+            }
+
+            console.log('Using class ID:', tenthClass.id);
+
+            // Get or create config
+            const { data: existingConfig } = await supabase
+                .from('timetable_configs')
+                .select('id')
+                .eq('institution_id', user.institutionId)
+                .limit(1)
+                .single();
+
+            let configId = existingConfig?.id;
+            if (!configId) {
+                const { data: newConfig } = await supabase
+                    .from('timetable_configs')
+                    .insert({
+                        institution_id: user.institutionId,
+                        periods_per_day: 8,
+                        period_duration_minutes: 45,
+                        start_time: '09:00',
+                    })
+                    .select('id')
+                    .single();
+                configId = newConfig?.id;
+            }
+
+            console.log('Using config ID:', configId);
+
+            // Delete existing slot for 10th A
+            const { error: deleteError } = await supabase
+                .from('timetable_slots')
+                .delete()
+                .eq('class_id', tenthClass.id)
+                .eq('section', 'A')
+                .eq('day_of_week', editingSlot.day)
+                .eq('period_index', editingSlot.period);
+
+            if (deleteError) {
+                console.error('Delete error:', deleteError);
+                // Continue anyway - might not exist
+            } else {
+                console.log('Deleted existing slot successfully');
+            }
+
+            // Small delay to ensure delete completes
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Insert new slot if subject is selected
+            if (editingSlot.data.subject_id) {
+                const slotData = {
+                    config_id: configId,
+                    faculty_id: editingSlot.data.assigned_faculty_id || user.id,
+                    class_id: tenthClass.id,
+                    section: 'A',
+                    day_of_week: editingSlot.day,
+                    period_index: editingSlot.period,
+                    subject_id: parseInt(editingSlot.data.subject_id),
+                    start_time: editingSlot.data.start_time || '09:00',
+                    end_time: editingSlot.data.end_time || '10:00',
+                    room_number: editingSlot.data.room_number || null,
+                    is_break: false,
+                };
+
+                console.log('Inserting slot data:', slotData);
+
+                const { data: insertedData, error: insertError } = await supabase
+                    .from('timetable_slots')
+                    .insert(slotData)
+                    .select();
+
+                if (insertError) {
+                    console.error('Insert error:', insertError);
+                    throw insertError;
+                }
+
+                console.log('Inserted successfully:', insertedData);
+            } else {
+                console.log('No subject selected, slot deleted only');
+            }
+        },
+        onSuccess: () => {
+            console.log('Timetable saved successfully, refetching data...');
+            toast.success('Timetable updated successfully');
+            queryClient.invalidateQueries({ queryKey: ['class-timetable-10th-a'] });
+            queryClient.refetchQueries({ queryKey: ['class-timetable-10th-a'] });
+            setIsEditDialogOpen(false);
+            setEditingSlot(null);
+        },
+        onError: (error: any) => {
+            console.error('Save error:', error);
+            toast.error(error.message || 'Failed to update timetable');
+        },
+    });
+
+    // Delete timetable slot
+    const deleteSlotMutation = useMutation({
+        mutationFn: async ({ day, period }: { day: string; period: number }) => {
+            if (!user?.id) {
+                throw new Error('User not found');
+            }
+
+            // Get the class_id for "10th"
+            const { data: tenthClass } = await supabase
+                .from('classes')
+                .select('id')
+                .eq('name', '10th')
+                .limit(1)
+                .single();
+
+            if (!tenthClass) {
+                throw new Error('10th class not found in database');
+            }
+
+            // Delete the slot
             const { error } = await supabase
                 .from('timetable_slots')
-                .upsert({
-                    config_id: config.id,
-                    day_of_week: day,
-                    period_index: periodIndex,
-                    start_time: calculateStartTime(periodIndex), // Helper needed
-                    end_time: calculateEndTime(periodIndex),
-                    subject_id: newSlot.subject_id,
-                    faculty_id: newSlot.faculty_id
-                }, { onConflict: 'config_id,day_of_week,period_index' });
+                .delete()
+                .eq('class_id', tenthClass.id)
+                .eq('section', 'A')
+                .eq('day_of_week', day)
+                .eq('period_index', period);
 
             if (error) throw error;
-        } catch (err) {
-            console.error("Auto-save failed", err);
-            // Revert?
+        },
+        onSuccess: () => {
+            toast.success('Slot deleted successfully');
+            queryClient.invalidateQueries({ queryKey: ['class-timetable-10th-a'] });
+            setDeleteConfirm(null);
+        },
+        onError: (error: any) => {
+            toast.error(error.message || 'Failed to delete slot');
+            setDeleteConfirm(null);
+        },
+    });
+
+    const handleDeleteSlot = (e: React.MouseEvent, day: string, period: number) => {
+        e.stopPropagation(); // Prevent opening edit dialog
+        setDeleteConfirm({ day, period });
+    };
+
+    const confirmDelete = () => {
+        if (deleteConfirm) {
+            deleteSlotMutation.mutate(deleteConfirm);
         }
     };
 
-    // Helper to calculate time based on config
-    const calculateStartTime = (periodIndex: number) => {
-        if (!configForm.startTime) return '09:00';
-        const [startH, startM] = configForm.startTime.split(':').map(Number);
-        const minutesToAdd = (periodIndex - 1) * configForm.duration;
-        const date = new Date();
-        date.setHours(startH, startM + minutesToAdd);
-        return date.toTimeString().substring(0, 5);
+    const handleSlotClick = (day: string, period: number) => {
+        const key = `${day}-${period}`;
+        const existingSlot = classTimetableData[key];
+
+        setEditingSlot({
+            day,
+            period,
+            data: existingSlot ? {
+                ...existingSlot,
+                assigned_faculty_id: existingSlot.faculty_id,
+            } : {
+                day_of_week: day,
+                period_index: period,
+                start_time: '09:00',
+                end_time: '10:00',
+                assigned_faculty_id: user?.id,
+            },
+        });
+        setIsEditDialogOpen(true);
     };
 
-    const calculateEndTime = (periodIndex: number) => {
-        if (!configForm.startTime) return '09:45';
-        const [startH, startM] = configForm.startTime.split(':').map(Number);
-        const minutesToAdd = (periodIndex) * configForm.duration;
-        const date = new Date();
-        date.setHours(startH, startM + minutesToAdd);
-        return date.toTimeString().substring(0, 5);
+    const updateEditingSlot = (field: string, value: any) => {
+        if (!editingSlot) return;
+        setEditingSlot({
+            ...editingSlot,
+            data: { ...editingSlot.data, [field]: value },
+        });
     };
 
-    if (loading) {
-        return (
-            <FacultyLayout>
-                <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>
-            </FacultyLayout>
-        );
-    }
+    const showLoader = useMinimumLoadingTime(isLoadingSchedule || isLoadingClassTimetable, 1000);
 
-    if (!classInfo) {
+    if (showLoader) {
         return (
             <FacultyLayout>
-                <Card className="m-6">
-                    <CardContent className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
-                        <Calendar className="w-12 h-12 mb-4" />
-                        <h2 className="text-xl font-semibold mb-2">No Class Assigned</h2>
-                        <p>You are not currently assigned as a Class Teacher for any section.</p>
-                    </CardContent>
-                </Card>
+                <Loader fullScreen={false} />
             </FacultyLayout>
         );
     }
@@ -289,148 +410,457 @@ export function TimetableManagement() {
         <FacultyLayout>
             <div className="space-y-6">
                 <PageHeader
-                    title={`Timetable: ${classInfo.className} - Section ${classInfo.section}`}
-                    subtitle="Manage weekly schedule and faculty assignments"
+                    title="My Timetable"
+                    subtitle="View your teaching schedule and manage class timetable"
                 />
 
-                <Tabs defaultValue="timetable">
+                <Tabs defaultValue="my-schedule">
                     <TabsList>
-                        <TabsTrigger value="timetable">Weekly Timetable</TabsTrigger>
-                        <TabsTrigger value="configuration">Configuration</TabsTrigger>
+                        <TabsTrigger value="my-schedule">My Schedule</TabsTrigger>
+                        <TabsTrigger value="class-timetable">
+                            Class Timetable
+                            {staffDetails?.class_assigned && ` (${staffDetails.class_assigned} - ${staffDetails.section_assigned})`}
+                        </TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="configuration" className="space-y-4">
+                    {/* My Personal Schedule (Read-only, created by institution) */}
+                    <TabsContent value="my-schedule">
                         <Card>
-                            <CardHeader>
-                                <CardTitle>Timetable Structure</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label>Periods per Day</Label>
-                                        <Input
-                                            type="number"
-                                            value={configForm.periods}
-                                            onChange={e => setConfigForm({ ...configForm, periods: parseInt(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Duration (Minutes)</Label>
-                                        <Input
-                                            type="number"
-                                            value={configForm.duration}
-                                            onChange={e => setConfigForm({ ...configForm, duration: parseInt(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Start Time</Label>
-                                        <Input
-                                            type="time"
-                                            value={configForm.startTime}
-                                            onChange={e => setConfigForm({ ...configForm, startTime: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                            </CardContent>
-                            <div className="p-6 pt-0">
-                                <Button onClick={handleSaveConfig} disabled={saving}>
-                                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    <Save className="mr-2 h-4 w-4" />
-                                    Save Configuration
-                                </Button>
-                            </div>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="timetable">
-                        {!config ? (
-                            <div className="text-center p-12 bg-muted/20 rounded-lg border border-dashed">
-                                <p className="text-muted-foreground mb-4">Timetable not configured yet.</p>
-                                <Button variant="outline" onClick={() => document.getElementById('radix-:r0:-trigger-configuration')?.click()}>
-                                    Go to Configuration
-                                </Button>
-                            </div>
-                        ) : (
-                            <Card className="overflow-x-auto">
-                                <CardContent className="p-0">
-                                    <table className="w-full border-collapse min-w-[1000px]">
-                                        <thead>
-                                            <tr>
-                                                <th className="border p-2 bg-muted/50 w-24">Day</th>
-                                                {Array.from({ length: configForm.periods }).map((_, i) => (
-                                                    <th key={i} className="border p-2 bg-muted/50 text-sm font-medium">
-                                                        <div>Period {i + 1}</div>
-                                                        <div className="text-xs text-muted-foreground font-normal">
-                                                            {calculateStartTime(i + 1)} - {calculateEndTime(i + 1)}
-                                                        </div>
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {configForm.days.map(day => (
-                                                <tr key={day}>
-                                                    <td className="border p-2 font-medium bg-muted/10">{day}</td>
-                                                    {Array.from({ length: configForm.periods }).map((_, i) => {
-                                                        const periodIndex = i + 1;
-                                                        const slot = slots.find(s => s.day_of_week === day && s.period_index === periodIndex);
-
-                                                        // Find suitable faculties for the selected subject (if any)
-                                                        // This fulfills the "dropdown of faculties for the subjects" req
-                                                        // Ideally we filter faculties list based on selected subject
-
-                                                        return (
-                                                            <td key={periodIndex} className="border p-2 min-w-[140px]">
-                                                                <div className="space-y-2">
-                                                                    <Select
-                                                                        value={slot?.subject_id || ''}
-                                                                        onValueChange={(val) => handleUpdateSlot(day, periodIndex, 'subject_id', val)}
-                                                                    >
-                                                                        <SelectTrigger className="h-7 text-xs">
-                                                                            <SelectValue placeholder="Subject" />
-                                                                        </SelectTrigger>
-                                                                        <SelectContent>
-                                                                            {subjects.map(sub => (
-                                                                                <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
-                                                                            ))}
-                                                                        </SelectContent>
-                                                                    </Select>
-
-                                                                    {slot?.subject_id && (
-                                                                        <Select
-                                                                            value={slot?.faculty_id || ''}
-                                                                            onValueChange={(val) => handleUpdateSlot(day, periodIndex, 'faculty_id', val)}
-                                                                        >
-                                                                            <SelectTrigger className="h-7 text-xs bg-muted/20">
-                                                                                <SelectValue placeholder="Faculty" />
-                                                                            </SelectTrigger>
-                                                                            <SelectContent>
-                                                                                {/*
-                                                                                Requirement: "selected within the dropdown of the faculties for the subjects"
-                                                                                Logic: Here we ideally show ALL faculties, or filter.
-                                                                                Since we don't have strict mapping yet in `faculty_subjects`, we show all.
-                                                                                This allows the user to perform the mapping via this UI.
-                                                                             */}
-                                                                                {faculties.map(fac => (
-                                                                                    <SelectItem key={fac.id} value={fac.id}>{fac.full_name}</SelectItem>
-                                                                                ))}
-                                                                            </SelectContent>
-                                                                        </Select>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
+                            <CardContent className="p-0 overflow-x-auto">
+                                <table className="w-full border-collapse min-w-[1000px]">
+                                    <thead>
+                                        <tr>
+                                            <th className="border p-4 bg-muted/50 w-32 font-bold text-left sticky left-0">Day</th>
+                                            {PERIODS.map((p) => (
+                                                <th key={p} className="border p-3 bg-muted/50 text-sm font-medium text-left">
+                                                    Period {p}
+                                                </th>
                                             ))}
-                                        </tbody>
-                                    </table>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {DAYS.map((day) => (
+                                            <tr key={day}>
+                                                <td className="border p-4 font-semibold bg-muted/10 sticky left-0">{day}</td>
+                                                {PERIODS.map((period) => {
+                                                    const key = `${day}-${period}`;
+                                                    const slot = myScheduleData[key];
+                                                    return (
+                                                        <td key={period} className="border p-2 min-w-[140px] h-[100px] align-top">
+                                                            {slot?.subject_id ? (
+                                                                <div className="space-y-1 p-1">
+                                                                    <Badge variant="default" className="w-full justify-start line-clamp-1 bg-primary/10 text-primary border-0 mb-1">
+                                                                        {slot.subjects?.name || 'Subject'}
+                                                                    </Badge>
+                                                                    <div className="text-xs font-medium pl-1">{slot.classes?.name || 'Class'}</div>
+                                                                    {slot.section && (
+                                                                        <div className="text-[10px] text-muted-foreground pl-1">
+                                                                            Sec: {slot.section}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="text-[10px] text-muted-foreground pl-1">
+                                                                        {slot.start_time} - {slot.end_time}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-muted-foreground/20 text-xs">
+                                                                    -
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CardContent>
+                        </Card>
+
+                        {/* Summary */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <Card>
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-primary/10 rounded-lg">
+                                            <BookOpen className="w-5 h-5 text-primary" />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold">{mySchedule.length}</p>
+                                            <p className="text-xs text-muted-foreground">Total Periods/Week</p>
+                                        </div>
+                                    </div>
                                 </CardContent>
                             </Card>
-                        )}
+
+                            <Card>
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-success/10 rounded-lg">
+                                            <Calendar className="w-5 h-5 text-success" />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold">
+                                                {DAYS.filter((day) => mySchedule.some(s => s.day_of_week === day)).length}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">Active Days</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-warning/10 rounded-lg">
+                                            <Clock className="w-5 h-5 text-warning" />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold">{staffDetails?.class_assigned || 'N/A'}</p>
+                                            <p className="text-xs text-muted-foreground">Class Teacher</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    {/* Class Timetable (Editable by faculty) */}
+                    <TabsContent value="class-timetable">
+                        <Card>
+                            <CardContent className="p-0 overflow-x-auto">
+                                <div className="p-4 bg-muted/30 border-b">
+                                    <p className="text-sm text-muted-foreground">
+                                        {staffDetails?.class_assigned ? (
+                                            <>Click on any cell to create or edit the timetable for <strong>{staffDetails.class_assigned} - Section {staffDetails.section_assigned}</strong></>
+                                        ) : (
+                                            <>Click on any cell to create or edit your class timetable</>
+                                        )}
+                                    </p>
+                                </div>
+                                <table className="w-full border-collapse min-w-[1000px]">
+                                    <thead>
+                                        <tr>
+                                            <th className="border p-4 bg-muted/50 w-32 font-bold text-left sticky left-0">Day</th>
+                                            {PERIODS.map((p) => (
+                                                <th key={p} className="border p-3 bg-muted/50 text-sm font-medium text-left">
+                                                    Period {p}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {DAYS.map((day) => (
+                                            <tr key={day}>
+                                                <td className="border p-4 font-semibold bg-muted/10 sticky left-0">{day}</td>
+                                                {PERIODS.map((period) => {
+                                                    const key = `${day}-${period}`;
+                                                    const slot = classTimetableData[key];
+                                                    return (
+                                                        <td
+                                                            key={period}
+                                                            className="border p-2 min-w-[140px] h-[100px] align-top hover:bg-primary/5 transition-colors cursor-pointer relative group"
+                                                            onClick={() => handleSlotClick(day, period)}
+                                                        >
+                                                            {slot?.subject_id ? (
+                                                                <>
+                                                                    <div className="space-y-1 p-1">
+                                                                        <Badge variant="default" className="w-full justify-start line-clamp-1 bg-primary/10 text-primary border-0 mb-1">
+                                                                            {slot.subjects?.name || 'Subject'}
+                                                                        </Badge>
+                                                                        <div className="text-xs font-medium pl-1">
+                                                                            {slot.profiles?.full_name || 'Faculty'}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-muted-foreground pl-1">
+                                                                            {slot.start_time} - {slot.end_time}
+                                                                        </div>
+                                                                    </div>
+                                                                    {/* Delete Icon */}
+                                                                    <button
+                                                                        onClick={(e) => handleDeleteSlot(e, day, period)}
+                                                                        className="absolute top-1 right-1 p-1 rounded-full bg-destructive/10 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground"
+                                                                        title="Delete slot"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-muted-foreground/20 text-xs hover:text-muted-foreground/40">
+                                                                    Click to add
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CardContent>
+                        </Card>
                     </TabsContent>
                 </Tabs>
             </div>
+
+            {/* Edit Dialog */}
+            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Edit Slot - {editingSlot?.day} Period {editingSlot?.period}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Configure the timing, subject, class and section for this period.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {editingSlot && (
+                        <div className="space-y-4 py-4">
+                            {/* Timing with AM/PM */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Start Time</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <Select
+                                            value={editingSlot.data.start_time?.split(':')[0] || '09'}
+                                            onValueChange={(hour) => {
+                                                const [_, minute] = (editingSlot.data.start_time || '09:00').split(':');
+                                                updateEditingSlot('start_time', `${hour}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Hour" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {Array.from({ length: 12 }, (_, i) => {
+                                                    const hour = String(i + 1).padStart(2, '0');
+                                                    return <SelectItem key={hour} value={hour}>{hour}</SelectItem>;
+                                                })}
+                                            </SelectContent>
+                                        </Select>
+                                        <Select
+                                            value={editingSlot.data.start_time?.split(':')[1] || '00'}
+                                            onValueChange={(minute) => {
+                                                const [hour, _] = (editingSlot.data.start_time || '09:00').split(':');
+                                                updateEditingSlot('start_time', `${hour}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Min" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {['00', '15', '30', '45'].map((min) => (
+                                                    <SelectItem key={min} value={min}>{min}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Select
+                                            value={
+                                                parseInt(editingSlot.data.start_time?.split(':')[0] || '09') >= 12 ? 'PM' : 'AM'
+                                            }
+                                            onValueChange={(period) => {
+                                                const [hour, minute] = (editingSlot.data.start_time || '09:00').split(':');
+                                                let newHour = parseInt(hour);
+                                                if (period === 'PM' && newHour < 12) {
+                                                    newHour += 12;
+                                                } else if (period === 'AM' && newHour >= 12) {
+                                                    newHour -= 12;
+                                                }
+                                                updateEditingSlot('start_time', `${String(newHour).padStart(2, '0')}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="AM">AM</SelectItem>
+                                                <SelectItem value="PM">PM</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">End Time</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <Select
+                                            value={editingSlot.data.end_time?.split(':')[0] || '10'}
+                                            onValueChange={(hour) => {
+                                                const [_, minute] = (editingSlot.data.end_time || '10:00').split(':');
+                                                updateEditingSlot('end_time', `${hour}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Hour" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {Array.from({ length: 12 }, (_, i) => {
+                                                    const hour = String(i + 1).padStart(2, '0');
+                                                    return <SelectItem key={hour} value={hour}>{hour}</SelectItem>;
+                                                })}
+                                            </SelectContent>
+                                        </Select>
+                                        <Select
+                                            value={editingSlot.data.end_time?.split(':')[1] || '00'}
+                                            onValueChange={(minute) => {
+                                                const [hour, _] = (editingSlot.data.end_time || '10:00').split(':');
+                                                updateEditingSlot('end_time', `${hour}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue placeholder="Min" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {['00', '15', '30', '45'].map((min) => (
+                                                    <SelectItem key={min} value={min}>{min}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Select
+                                            value={
+                                                parseInt(editingSlot.data.end_time?.split(':')[0] || '10') >= 12 ? 'PM' : 'AM'
+                                            }
+                                            onValueChange={(period) => {
+                                                const [hour, minute] = (editingSlot.data.end_time || '10:00').split(':');
+                                                let newHour = parseInt(hour);
+                                                if (period === 'PM' && newHour < 12) {
+                                                    newHour += 12;
+                                                } else if (period === 'AM' && newHour >= 12) {
+                                                    newHour -= 12;
+                                                }
+                                                updateEditingSlot('end_time', `${String(newHour).padStart(2, '0')}:${minute}`);
+                                            }}
+                                        >
+                                            <SelectTrigger className="h-9">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="AM">AM</SelectItem>
+                                                <SelectItem value="PM">PM</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Subject */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Subject</label>
+                                <Select
+                                    value={editingSlot.data.subject_id || 'none'}
+                                    onValueChange={(v) => updateEditingSlot('subject_id', v === 'none' ? null : v)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select subject" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">No Subject (Free Period)</SelectItem>
+                                        {subjects.map((s: any) => (
+                                            <SelectItem key={s.id} value={String(s.id)}>
+                                                {s.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Faculty/Staff Selector */}
+                            {editingSlot.data.subject_id && (
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Assign Faculty</label>
+                                    <Select
+                                        value={editingSlot.data.assigned_faculty_id || user?.id || 'none'}
+                                        onValueChange={(v) => updateEditingSlot('assigned_faculty_id', v === 'none' ? user?.id : v)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select faculty" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {allFaculty.map((f: any) => (
+                                                <SelectItem key={f.id} value={String(f.id)}>
+                                                    {f.full_name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
+
+                            {/* Class and Section */}
+                            {editingSlot.data.subject_id && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium">Class</label>
+                                            <Select value="10th" disabled>
+                                                <SelectTrigger>
+                                                    <SelectValue>10th</SelectValue>
+                                                </SelectTrigger>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium">Section</label>
+                                            <Select value="A" disabled>
+                                                <SelectTrigger>
+                                                    <SelectValue>A</SelectValue>
+                                                </SelectTrigger>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    {/* Room Number */}
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Room Number</label>
+                                        <Input
+                                            placeholder="e.g., 101"
+                                            value={editingSlot.data.room_number || ''}
+                                            onChange={(e) => updateEditingSlot('room_number', e.target.value)}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => saveSlotMutation.mutate()}
+                            disabled={saveSlotMutation.isPending}
+                        >
+                            <Save className="w-4 h-4 mr-2" />
+                            Save
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+                <DialogContent className="sm:max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle>Delete Slot</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete this timetable slot? This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={confirmDelete}
+                            disabled={deleteSlotMutation.isPending}
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </FacultyLayout>
     );
 }

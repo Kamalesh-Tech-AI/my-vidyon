@@ -14,6 +14,7 @@ import {
   Settings,
   UserCheck,
   ClipboardCheck,
+  CalendarClock,
 } from 'lucide-react';
 
 export function InstitutionLayout({ children }: { children: ReactNode }) {
@@ -27,6 +28,7 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: t.nav.calendar, href: '/institution/calendar', icon: Calendar },
     { label: 'Faculty Assigning', href: '/institution/faculty-assigning', icon: UserCheck },
     { label: 'Leave Approval', href: '/institution/leave-approval', icon: ClipboardCheck },
+    { label: 'Timetable', href: '/institution/timetable', icon: CalendarClock },
     { label: t.nav.feeStructure, href: '/institution/fees', icon: DollarSign },
     { label: t.nav.analytics, href: '/institution/analytics', icon: BarChart3 },
     { label: t.nav.reports, href: '/institution/reports', icon: FileText },

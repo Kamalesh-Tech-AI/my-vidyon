@@ -94,16 +94,13 @@ export function ParentSettings() {
                                 <Label>{t.parent.settings.phone}</Label>
                                 <div className="relative">
                                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <Input className="pl-10" defaultValue="+91 98765 43210" />
+                                    <Input className="pl-10" defaultValue="+91 98765 43210" disabled />
                                 </div>
                             </div>
                             <div className="space-y-2">
                                 <Label>{t.parent.settings.address}</Label>
-                                <Input defaultValue="123, Green Park, New Delhi" />
+                                <Input defaultValue="123, Green Park, New Delhi" disabled />
                             </div>
-                        </div>
-                        <div className="mt-4 flex justify-end">
-                            <Button>{t.parent.settings.saveChanges}</Button>
                         </div>
                     </div>
 

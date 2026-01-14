@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { CourseCard } from '@/components/cards/CourseCard';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/i18n/TranslationContext';
-import { Search, Filter } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 const courses = [
   { title: 'Mathematics', code: 'MATH10', instructor: 'Mr. Sharma', progress: 75, students: 45, schedule: 'Mon, Wed 10:00 AM', status: 'active' as const },
@@ -23,22 +23,6 @@ export function StudentCourses() {
       <PageHeader
         title={t.nav.courses}
         subtitle={t.dashboard.overview}
-        actions={
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={t.common.search + '...'}
-                className="input-field pl-10 w-64"
-              />
-            </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="w-4 h-4" />
-              {t.common.filter}
-            </Button>
-          </div>
-        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

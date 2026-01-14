@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
-import { User, Lock, Phone, Mail, LogOut, MapPin, Briefcase, GraduationCap } from 'lucide-react';
+import { User, Lock, Phone, Mail, LogOut, MapPin, Briefcase, GraduationCap, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from '@/i18n/TranslationContext';
 
@@ -12,9 +13,67 @@ export function FacultySettings() {
     const { user, logout } = useAuth();
     const { t } = useTranslation();
 
+    // State for personal information
+    const [personalInfo, setPersonalInfo] = useState({
+        phone: '+91 98765 43210',
+        address: '45, Faculty Quarters, Campus North'
+    });
+    const [isSavingPersonalInfo, setIsSavingPersonalInfo] = useState(false);
+
+    // State for password change
+    const [passwordData, setPasswordData] = useState({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+    });
+    const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+    const handlePersonalInfoChange = (field: string, value: string) => {
+        setPersonalInfo(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSavePersonalInfo = (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSavingPersonalInfo(true);
+
+        // Simulate API call
+        setTimeout(() => {
+            setIsSavingPersonalInfo(false);
+            toast.success('Personal information updated successfully!');
+        }, 1000);
+    };
+
     const handlePasswordChange = (e: React.FormEvent) => {
         e.preventDefault();
-        toast.success(t.parent.settings?.passwordSuccess || 'Password updated successfully');
+
+        // Validate passwords
+        if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+            toast.error('Please fill in all password fields');
+            return;
+        }
+
+        if (passwordData.newPassword !== passwordData.confirmPassword) {
+            toast.error('New passwords do not match');
+            return;
+        }
+
+        if (passwordData.newPassword.length < 6) {
+            toast.error('Password must be at least 6 characters long');
+            return;
+        }
+
+        setIsUpdatingPassword(true);
+
+        // Simulate API call
+        setTimeout(() => {
+            setIsUpdatingPassword(false);
+            setPasswordData({
+                currentPassword: '',
+                newPassword: '',
+                confirmPassword: ''
+            });
+            toast.success(t.parent.settings?.passwordSuccess || 'Password updated successfully');
+        }, 1000);
     };
 
     if (!user) return null;
@@ -87,33 +146,52 @@ export function FacultySettings() {
                             <User className="w-5 h-5 text-primary" />
                             {t.parent.settings?.personalInfo || "Personal Information"}
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>{t.parent.settings?.fullName || "Full Name"}</Label>
-                                <Input value={user.name} disabled />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>{t.parent.settings?.email || "Email Address"}</Label>
-                                <Input value={user.email} disabled />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>{t.parent.settings?.phone || "Phone Number"}</Label>
-                                <div className="relative">
-                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <Input className="pl-10" defaultValue="+91 98765 43210" />
+                        <form onSubmit={handleSavePersonalInfo}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>{t.parent.settings?.fullName || "Full Name"}</Label>
+                                    <Input value={user.name} disabled />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>{t.parent.settings?.email || "Email Address"}</Label>
+                                    <Input value={user.email} disabled />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>{t.parent.settings?.phone || "Phone Number"}</Label>
+                                    <div className="relative">
+                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                        <Input
+                                            className="pl-10"
+                                            value={personalInfo.phone}
+                                            onChange={(e) => handlePersonalInfoChange('phone', e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label>{t.parent.settings?.address || "Address"}</Label>
+                                    <div className="relative">
+                                        <MapPin className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                                        <Input
+                                            className="pl-10"
+                                            value={personalInfo.address}
+                                            onChange={(e) => handlePersonalInfoChange('address', e.target.value)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                            <div className="space-y-2 md:col-span-2">
-                                <Label>{t.parent.settings?.address || "Address"}</Label>
-                                <div className="relative">
-                                    <MapPin className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
-                                    <Input className="pl-10" defaultValue="45, Faculty Quarters, Campus North" />
-                                </div>
+                            <div className="mt-6 flex justify-end">
+                                <Button type="submit" disabled={isSavingPersonalInfo}>
+                                    {isSavingPersonalInfo ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        t.parent.settings?.saveChanges || "Save Changes"
+                                    )}
+                                </Button>
                             </div>
-                        </div>
-                        <div className="mt-6 flex justify-end">
-                            <Button>{t.parent.settings?.saveChanges || "Save Changes"}</Button>
-                        </div>
+                        </form>
                     </div>
 
                     <div className="bg-white rounded-xl border border-border p-6 shadow-sm">
@@ -124,20 +202,41 @@ export function FacultySettings() {
                         <form onSubmit={handlePasswordChange} className="space-y-4">
                             <div className="space-y-2">
                                 <Label>{t.parent.settings?.currentPassword || "Current Password"}</Label>
-                                <Input type="password" />
+                                <Input
+                                    type="password"
+                                    value={passwordData.currentPassword}
+                                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                                />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>{t.parent.settings?.newPassword || "New Password"}</Label>
-                                    <Input type="password" />
+                                    <Input
+                                        type="password"
+                                        value={passwordData.newPassword}
+                                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{t.parent.settings?.confirmPassword || "Confirm New Password"}</Label>
-                                    <Input type="password" />
+                                    <Input
+                                        type="password"
+                                        value={passwordData.confirmPassword}
+                                        onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                                    />
                                 </div>
                             </div>
                             <div className="mt-4 flex justify-end">
-                                <Button type="submit">{t.parent.settings?.updatePassword || "Update Password"}</Button>
+                                <Button type="submit" disabled={isUpdatingPassword}>
+                                    {isUpdatingPassword ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Updating...
+                                        </>
+                                    ) : (
+                                        t.parent.settings?.updatePassword || "Update Password"
+                                    )}
+                                </Button>
                             </div>
                         </form>
                     </div>

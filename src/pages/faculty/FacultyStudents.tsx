@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
@@ -5,6 +6,7 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/ui/button';
 import { Search, Mail, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 const students = [
     { id: 1, rollNo: '101', name: 'John Smith', class: 'Grade 10-A', parent: 'Robert Smith', contact: '+91 98765 43210', attendance: '95%', house: 'Blue', email: 'john.smith@student.edu' },
@@ -15,6 +17,19 @@ const students = [
 ];
 
 export function FacultyStudents() {
+    const navigate = useNavigate();
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Filter students based on search query
+    const filteredStudents = students.filter(student => {
+        const query = searchQuery.toLowerCase();
+        return (
+            student.name.toLowerCase().includes(query) ||
+            student.rollNo.toLowerCase().includes(query) ||
+            student.house.toLowerCase().includes(query)
+        );
+    });
+
     const columns = [
         { key: 'rollNo', header: 'Roll No.' },
         { key: 'name', header: 'Full Name' },
@@ -58,7 +73,7 @@ export function FacultyStudents() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => toast.info(`Viewing profile for ${item.name}`)}
+                        onClick={() => navigate(`/faculty/students/${item.rollNo}`)}
                     >
                         View Profile
                     </Button>
@@ -82,6 +97,8 @@ export function FacultyStudents() {
                             type="text"
                             placeholder="Search students by name, roll no or house..."
                             className="input-field pl-10"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
                     <select className="px-4 py-2 border rounded-lg bg-background">
@@ -98,7 +115,7 @@ export function FacultyStudents() {
                     </select>
                 </div>
 
-                <DataTable columns={columns} data={students} />
+                <DataTable columns={columns} data={filteredStudents} />
             </div>
         </FacultyLayout>
     );
