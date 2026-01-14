@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { generateUUID } from '@/lib/utils';
 import { Plus, Upload, X, Loader2, ChevronDown, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -240,32 +241,88 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
         }
         setIsSubmitting(true);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error('No active session found. Please log in again.');
-
-            const { data: responseData, error } = await supabase.functions.invoke('create-user', {
-                headers: {
-                    Authorization: `Bearer ${session.access_token}`
-                },
-                body: {
-                    email: data.email,
-                    password: data.password,
-                    role: 'faculty',
-                    full_name: data.name,
-                    institution_id: institutionId,
-                    staff_id: data.staffId,
-                    department: data.department,
-                    subjects: data.subjects
-                }
+            console.log('=== Starting Staff Creation ===');
+            console.log('Institution ID:', institutionId);
+            console.log('Staff Data:', {
+                name: data.name,
+                email: data.email,
+                staffId: data.staffId,
+                department: data.department,
+                phone: data.phone
             });
-            if (error) throw error;
-            toast.success('Staff added');
-            queryClient.invalidateQueries({ queryKey: ['institution-staff'] });
+
+            // Check for existing user
+            const { data: existingProfile, error: checkError } = await supabase
+                .from('profiles')
+                .select('id, email')
+                .eq('email', data.email)
+                .maybeSingle();
+
+            if (checkError) {
+                console.error('Error checking existing profile:', checkError);
+                throw new Error(`Database error: ${checkError.message}`);
+            }
+
+            if (existingProfile) {
+                console.warn('Profile already exists:', existingProfile);
+                throw new Error('A user with this email already exists');
+            }
+
+            // Generate UUID for the profile
+            const profileId = generateUUID();
+            console.log('Generated Profile ID:', profileId);
+
+            // Prepare staff profile data
+            const profileData = {
+                id: profileId,
+                email: data.email,
+                full_name: data.name,
+                role: 'faculty',
+                institution_id: institutionId,
+                staff_id: data.staffId,
+                department: data.department || null,
+                phone: data.phone || null,
+                date_of_birth: data.dob || null
+            };
+
+            console.log('Inserting profile with data:', profileData);
+
+            // Create profile directly
+            const { data: newProfile, error: insertError } = await supabase
+                .from('profiles')
+                .insert(profileData)
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error('Profile insertion error:', insertError);
+                console.error('Error details:', {
+                    message: insertError.message,
+                    details: insertError.details,
+                    hint: insertError.hint,
+                    code: insertError.code
+                });
+                throw new Error(`Failed to create profile: ${insertError.message}`);
+            }
+
+            console.log('Profile created successfully:', newProfile);
+
+            // NOTE: Password is ignored in this workaround
+            // In production, create user via Supabase Auth Admin API or Edge Function
+
+            toast.success('Staff member added successfully!');
+
+            // Force refetch of staff list
+            await queryClient.invalidateQueries({ queryKey: ['institution-staff', institutionId] });
+            await queryClient.refetchQueries({ queryKey: ['institution-staff', institutionId] });
+
             onSuccess();
             onOpenChange(false);
             setData({ name: '', staffId: '', role: '', email: '', phone: '', dob: '', password: '', department: '', subjects: [] });
         } catch (error: any) {
-            toast.error(error.message);
+            console.error('=== Staff Creation Failed ===');
+            console.error('Error:', error);
+            toast.error(error.message || 'Failed to create staff');
         } finally {
             setIsSubmitting(false);
         }

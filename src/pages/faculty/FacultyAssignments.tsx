@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/ui/button';
+<<<<<<< HEAD
 import { Plus, Search, FileText, Download, MoreVertical, Edit, XCircle, Eye } from 'lucide-react';
 import {
     DropdownMenu,
@@ -12,6 +13,10 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+=======
+import { Plus, Search, FileText, Download, MoreVertical, Eye, Edit, XCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+>>>>>>> 264d502 (changed)
 import {
     Dialog,
     DialogContent,
@@ -19,8 +24,18 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog";
+<<<<<<< HEAD
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+=======
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+>>>>>>> 264d502 (changed)
 
 const initialAssignments = [
     { id: 1, title: 'Algebra Homework', subject: 'Mathematics', class: 'Grade 10-A', dueDate: 'Dec 22, 2025', submissions: '42/45', status: 'active' },
@@ -106,6 +121,18 @@ export function FacultyAssignments() {
             console.error(e);
             toast.error("Download failed");
         }
+    };
+
+    const handleCloseAssignment = (id: number) => {
+        setAssignments(prev => prev.map(assignment =>
+            assignment.id === id ? { ...assignment, status: 'closed' } : assignment
+        ));
+        toast.success('Assignment closed successfully');
+    };
+
+    const handleUpdateAssignment = (id: number) => {
+        // Navigate to edit page
+        navigate(`/faculty/assignments/edit/${id}`);
     };
 
     const columns = [

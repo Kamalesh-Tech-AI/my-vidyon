@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -6,13 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Upload, CheckCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle, X, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
 export function FacultyUploadCertificate() {
     const { user } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [classes, setClasses] = useState<any[]>([]);
     const [availableSections, setAvailableSections] = useState<string[]>([]);
@@ -75,14 +78,11 @@ export function FacultyUploadCertificate() {
         try {
             console.log(`Fetching students for: Class '${selectedClass.name}', Section '${section}'`);
 
-            // Fetch students by class_name and section
-            // We use class_name because students table is populated with class names (e.g. "10th", "12th") 
-            // from the User Creation dialogs, not necessarily linked by class_id FK.
             const query = supabase
                 .from('students')
                 .select('id, name, admission_no')
                 .eq('institution_id', user?.institutionId)
-                .eq('class_name', selectedClass.name) // STRICT MATCH on Name
+                .eq('class_name', selectedClass.name)
                 .eq('section', section);
 
             const { data, error } = await query;
@@ -96,15 +96,70 @@ export function FacultyUploadCertificate() {
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFormData(prev => ({ ...prev, file: e.target.files![0] }));
+    const validateFile = (file: File): boolean => {
+        const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        const maxSize = 10 * 1024 * 1024; // 10MB
+
+        if (!validTypes.includes(file.type)) {
+            toast.error('Invalid file type. Please upload PDF, JPG, or PNG files only.');
+            return false;
         }
+
+        if (file.size > maxSize) {
+            toast.error('File size exceeds 10MB. Please upload a smaller file.');
+            return false;
+        }
+
+        return true;
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && validateFile(file)) {
+            setUploadedFile(file);
+            setFormData(prev => ({ ...prev, file }));
+            toast.success(`File "${file.name}" selected`);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        const file = e.dataTransfer.files?.[0];
+        if (file && validateFile(file)) {
+            setUploadedFile(file);
+            setFormData(prev => ({ ...prev, file }));
+            toast.success(`File "${file.name}" uploaded`);
+        }
+    };
+
+    const handleRemoveFile = () => {
+        setUploadedFile(null);
+        setFormData(prev => ({ ...prev, file: null }));
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+        toast.info('File removed');
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.studentId || !formData.title || !formData.file || !user?.institutionId) {
+
+        if (!formData.studentId || !formData.title || !uploadedFile || !user?.institutionId) {
             toast.error('Please fill all required fields');
             return;
         }
@@ -113,7 +168,7 @@ export function FacultyUploadCertificate() {
 
         try {
             // 1. Upload File
-            const file = formData.file;
+            const file = uploadedFile;
             const fileExt = file.name.split('.').pop();
             const fileName = `cert-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
             const filePath = `${user.institutionId}/${fileName}`;
@@ -134,18 +189,19 @@ export function FacultyUploadCertificate() {
                 .insert({
                     title: formData.title,
                     student_id: formData.studentId,
-                    course: formData.description, // Mapping description to course/details column
+                    course: formData.description,
                     file_url: publicUrl,
                     institution_id: user.institutionId,
                     uploaded_by: user.id,
                     issued_date: new Date().toISOString(),
-                    status: 'available', // if we add status column or just assume available
-                    category: formData.title // Using title as category or vice versa
+                    status: 'available',
+                    category: formData.title
                 });
 
             if (insertError) throw insertError;
 
             toast.success('Certificate uploaded successfully!');
+
             // Reset form
             setFormData({
                 classId: '',
@@ -155,8 +211,12 @@ export function FacultyUploadCertificate() {
                 description: '',
                 file: null
             });
+            setUploadedFile(null);
             setStudents([]);
-            setAvailableSections([]); // Reset sections too or keep them? Reset ideally as classId is reset.
+            setAvailableSections([]);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
 
         } catch (error: any) {
             console.error('Upload failed:', error);
@@ -267,29 +327,57 @@ export function FacultyUploadCertificate() {
                             />
                         </div>
 
-                        {/* File Upload */}
+                        {/* File Upload with Drag and Drop */}
                         <div className="space-y-2">
                             <Label>Upload Certificate File</Label>
-                            <div className="border-2 border-dashed border-border rounded-lg p-8 flex flex-col items-center justify-center text-center hover:bg-muted/50 transition-colors cursor-pointer relative">
-                                <input
-                                    type="file"
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    onChange={handleFileChange}
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                />
-                                {formData.file ? (
-                                    <div className="flex flex-col items-center text-primary">
-                                        <CheckCircle className="w-8 h-8 mb-2" />
-                                        <p className="font-medium">{formData.file.name}</p>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                onChange={handleFileChange}
+                                className="hidden"
+                                id="file-upload"
+                            />
+
+                            {!uploadedFile ? (
+                                <div
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${isDragging
+                                        ? 'border-primary bg-primary/5 scale-[1.02]'
+                                        : 'border-border hover:bg-muted/50 hover:border-primary/50'
+                                        }`}
+                                >
+                                    <Upload className={`w-8 h-8 mb-4 transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                                    <p className="text-sm font-medium mb-1">
+                                        {isDragging ? 'Drop file here' : 'Click to upload or drag and drop'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">PDF, JPG or PNG (max. 10MB)</p>
+                                </div>
+                            ) : (
+                                <div className="border-2 border-success bg-success/5 rounded-lg p-4 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <FileText className="w-8 h-8 text-success" />
+                                        <div>
+                                            <p className="text-sm font-medium">{uploadedFile.name}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {(uploadedFile.size / 1024).toFixed(2)} KB
+                                            </p>
+                                        </div>
                                     </div>
-                                ) : (
-                                    <>
-                                        <Upload className="w-8 h-8 text-muted-foreground mb-4" />
-                                        <p className="text-sm font-medium mb-1">Click to upload or drag and drop</p>
-                                        <p className="text-xs text-muted-foreground">PDF, JPG or PNG (max. 10MB)</p>
-                                    </>
-                                )}
-                            </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleRemoveFile}
+                                        className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
