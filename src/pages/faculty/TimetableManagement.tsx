@@ -304,8 +304,12 @@ export function TimetableManagement() {
         onSuccess: () => {
             console.log('Timetable saved successfully, refetching data...');
             toast.success('Timetable updated successfully');
+            // Invalidate both class timetable and my schedule queries
             queryClient.invalidateQueries({ queryKey: ['class-timetable-10th-a'] });
+            queryClient.invalidateQueries({ queryKey: ['faculty-my-schedule', user?.id] });
+            // Force immediate refetch
             queryClient.refetchQueries({ queryKey: ['class-timetable-10th-a'] });
+            queryClient.refetchQueries({ queryKey: ['faculty-my-schedule', user?.id] });
             setIsEditDialogOpen(false);
             setEditingSlot(null);
         },
@@ -348,6 +352,7 @@ export function TimetableManagement() {
         onSuccess: () => {
             toast.success('Slot deleted successfully');
             queryClient.invalidateQueries({ queryKey: ['class-timetable-10th-a'] });
+            queryClient.invalidateQueries({ queryKey: ['faculty-my-schedule', user?.id] });
             setDeleteConfirm(null);
         },
         onError: (error: any) => {

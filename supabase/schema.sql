@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role user_role NOT NULL DEFAULT 'student',
   institution_id TEXT,
   status TEXT DEFAULT 'active',
+  date_of_birth DATE,
+  phone TEXT,
+  staff_id TEXT,
+  department TEXT,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
@@ -30,6 +34,10 @@ CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Authenticated users can insert profiles" ON public.profiles;
+CREATE POLICY "Authenticated users can insert profiles" ON public.profiles
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- Super defensive function
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -118,6 +126,7 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   institution_id TEXT REFERENCES public.institutions(institution_id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   code TEXT,
+  department TEXT,
   class_name TEXT,
   group_name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())

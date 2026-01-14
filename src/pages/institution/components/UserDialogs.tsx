@@ -248,67 +248,57 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
                 email: data.email,
                 staffId: data.staffId,
                 department: data.department,
-                phone: data.phone
+                phone: data.phone,
+                dob: data.dob
             });
 
-            // Check for existing user
-            const { data: existingProfile, error: checkError } = await supabase
-                .from('profiles')
-                .select('id, email')
-                .eq('email', data.email)
-                .maybeSingle();
+            // Get current session for authentication
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error('No active session found. Please log in again.');
 
-            if (checkError) {
-                console.error('Error checking existing profile:', checkError);
-                throw new Error(`Database error: ${checkError.message}`);
+            // Use Edge Function to create user with auth
+            const { data: responseData, error } = await supabase.functions.invoke('create-user', {
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`
+                },
+                body: {
+                    email: data.email,
+                    password: data.password,
+                    role: 'faculty',
+                    full_name: data.name,
+                    institution_id: institutionId,
+                    staff_id: data.staffId,
+                    department: data.department || null,
+                    phone: data.phone || null,
+                    date_of_birth: data.dob || null
+                }
+            });
+
+            if (error) {
+                console.error('Edge function error:', error);
+                throw error;
             }
 
-            if (existingProfile) {
-                console.warn('Profile already exists:', existingProfile);
-                throw new Error('A user with this email already exists');
+            console.log('Staff created successfully:', responseData);
+
+            // If subjects were selected, create staff_details entry
+            if (data.subjects.length > 0 && responseData?.user?.id) {
+                const { error: staffDetailsError } = await supabase
+                    .from('staff_details')
+                    .insert({
+                        profile_id: responseData.user.id,
+                        institution_id: institutionId,
+                        staff_id: data.staffId,
+                        role: data.role || 'teacher',
+                        subjects: data.subjects,
+                        department: data.department || null
+                    });
+
+                if (staffDetailsError) {
+                    console.warn('Failed to create staff_details:', staffDetailsError);
+                    // Don't throw - staff was created successfully
+                }
             }
-
-            // Generate UUID for the profile
-            const profileId = generateUUID();
-            console.log('Generated Profile ID:', profileId);
-
-            // Prepare staff profile data
-            const profileData = {
-                id: profileId,
-                email: data.email,
-                full_name: data.name,
-                role: 'faculty',
-                institution_id: institutionId,
-                staff_id: data.staffId,
-                department: data.department || null,
-                phone: data.phone || null,
-                date_of_birth: data.dob || null
-            };
-
-            console.log('Inserting profile with data:', profileData);
-
-            // Create profile directly
-            const { data: newProfile, error: insertError } = await supabase
-                .from('profiles')
-                .insert(profileData)
-                .select()
-                .single();
-
-            if (insertError) {
-                console.error('Profile insertion error:', insertError);
-                console.error('Error details:', {
-                    message: insertError.message,
-                    details: insertError.details,
-                    hint: insertError.hint,
-                    code: insertError.code
-                });
-                throw new Error(`Failed to create profile: ${insertError.message}`);
-            }
-
-            console.log('Profile created successfully:', newProfile);
-
-            // NOTE: Password is ignored in this workaround
-            // In production, create user via Supabase Auth Admin API or Edge Function
 
             toast.success('Staff member added successfully!');
 
@@ -322,7 +312,12 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
         } catch (error: any) {
             console.error('=== Staff Creation Failed ===');
             console.error('Error:', error);
-            toast.error(error.message || 'Failed to create staff');
+            const errorMsg = error.message || 'Failed to create staff';
+            toast.error(errorMsg);
+
+            if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+                toast.error('Session expired or unauthorized. Please Log Out and Log In again.');
+            }
         } finally {
             setIsSubmitting(false);
         }

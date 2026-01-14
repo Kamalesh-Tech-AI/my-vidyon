@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     }
 
     try {
-        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id, parent_email, parent_phone, parent_name, class_name, section, department, subjects } = await req.json()
+        const { email, password, role, full_name, institution_id, register_number, staff_id, phone, student_id, parent_email, parent_phone, parent_name, class_name, section, department, subjects, date_of_birth } = await req.json()
 
         if (!email || !role || !institution_id) {
             throw new Error("Missing required fields: email, role, and institution_id are required.")
@@ -78,17 +78,25 @@ Deno.serve(async (req) => {
 
         const userId = authUser.user.id;
 
-        // 2. Explicitly Insert/Update Profile
+        // 2. Explicitly Insert/Update Profile with all fields
+        const profileData: any = {
+            id: userId,
+            email: email,
+            full_name: full_name,
+            role: finalRole,
+            institution_id: institution_id,
+            updated_at: new Date().toISOString()
+        };
+
+        // Add optional fields if provided
+        if (phone) profileData.phone = phone;
+        if (staff_id) profileData.staff_id = staff_id;
+        if (department) profileData.department = department;
+        if (date_of_birth) profileData.date_of_birth = date_of_birth;
+
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
-            .upsert({
-                id: userId,
-                email: email,
-                full_name: full_name,
-                role: finalRole,
-                institution_id: institution_id,
-                updated_at: new Date().toISOString()
-            });
+            .upsert(profileData);
 
         if (profileError) {
             console.error("Error creating/updating profile record:", profileError);
