@@ -200,7 +200,7 @@ export const en = {
             title: "Leave Application",
             subtitle: "Apply for leave on behalf of your children",
             newRequest: "New Leave Request",
-            selectStudent: "Select Student",
+            selectStudent: "Select Child",
             selectChildPlaceholder: "Select child...",
             fromDate: "From Date",
             toDate: "To Date",

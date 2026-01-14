@@ -11,34 +11,135 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/common/Badge';
 import { useTranslation } from '@/i18n/TranslationContext';
 
-// Mock Data (same as dashboard for consistency)
-const myChildren = [
-    { id: 'STU001', name: 'Alex Johnson', grade: 'Class 10-A' },
-    { id: 'STU002', name: 'Emily Johnson', grade: 'Class 6-B' }
-];
+import { useAuth } from '@/context/AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { Loader2 } from 'lucide-react';
 
 export function ParentLeave() {
     const { t } = useTranslation();
+    const { user } = useAuth();
     const [selectedChild, setSelectedChild] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [reason, setReason] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const { data: myChildren, isLoading } = useQuery({
+        queryKey: ['parent-children', user?.id],
+        queryFn: async () => {
+            const { data: parentData, error: parentError } = await supabase
+                .from('parents')
+                .select('id')
+                .eq('profile_id', user?.id)
+                .single();
+
+            if (parentError) throw parentError;
+
+            const { data: links, error: linkError } = await supabase
+                .from('student_parents')
+                .select('student_id')
+                .eq('parent_id', parentData.id);
+
+            if (linkError) throw linkError;
+
+            if (!links || links.length === 0) return [];
+
+            const studentIds = links.map(l => l.student_id);
+
+            const { data: students, error: studentError } = await supabase
+                .from('students')
+                .select('id, name, class_name, class_id, section')
+                .in('id', studentIds);
+
+            if (studentError) throw studentError;
+
+            return students.map(s => ({
+                id: s.id,
+                name: s.name,
+                grade: s.class_name || 'N/A',
+                classId: s.class_id,
+                section: s.section
+            }));
+        },
+        enabled: !!user?.id
+    });
+
+    const students = myChildren || [];
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedChild || !startDate || !endDate || !reason) {
             toast.error(t.parent.leave.fillAllFields);
             return;
         }
 
-        const childName = myChildren.find(c => c.id === selectedChild)?.name;
-        toast.success(`${t.parent.leave.submittedSuccess} ${childName}`);
+        const selectedStudent = students.find(s => s.id === selectedChild);
+        if (!selectedStudent) return;
 
-        // Reset form
-        setSelectedChild('');
-        setStartDate('');
-        setEndDate('');
-        setReason('');
+        try {
+            // 1. Get Parent ID
+            const { data: parentData } = await supabase
+                .from('parents')
+                .select('id')
+                .eq('profile_id', user?.id)
+                .single();
+
+            if (!parentData) throw new Error('Parent record not found');
+
+            // 2. Insert Leave Request
+            const { error: leaveError } = await supabase
+                .from('leave_requests')
+                .insert({
+                    student_id: selectedStudent.id,
+                    parent_id: parentData.id,
+                    from_date: startDate,
+                    to_date: endDate,
+                    reason: reason,
+                    status: 'Pending'
+                });
+
+            if (leaveError) throw leaveError;
+
+            // 3. Find Class Teacher to Notify
+            // We need class_id and section from the student.
+            // If class_id is missing on student, we try to rely on class_name (less reliable) or skip.
+            // Assuming student has class_id as per types.
+
+            if (selectedStudent.classId && selectedStudent.section) {
+                const { data: classTeacherData } = await supabase
+                    .from('faculty_subjects')
+                    .select('faculty_profile_id')
+                    .eq('class_id', selectedStudent.classId)
+                    .eq('section', selectedStudent.section)
+                    .eq('assignment_type', 'class_teacher')
+                    .single();
+
+                if (classTeacherData?.faculty_profile_id) {
+                    // 4. Send Notification
+                    await supabase
+                        .from('notifications')
+                        .insert({
+                            user_id: classTeacherData.faculty_profile_id,
+                            title: 'New Leave Request',
+                            message: `Parent of ${selectedStudent.name} (${selectedStudent.grade}) has requested leave from ${startDate} to ${endDate}.`,
+                            type: 'leave',
+                            read: false
+                        });
+                }
+            }
+
+            toast.success(`${t.parent.leave.submittedSuccess} ${selectedStudent.name}`);
+
+            // Reset form
+            setSelectedChild('');
+            setStartDate('');
+            setEndDate('');
+            setReason('');
+
+        } catch (error: any) {
+            console.error('Error submitting leave:', error);
+            toast.error(error.message || 'Failed to submit leave request');
+        }
     };
 
     return (
@@ -65,11 +166,17 @@ export function ParentLeave() {
                                         <SelectValue placeholder={t.parent.leave.selectChildPlaceholder} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {myChildren.map(child => (
-                                            <SelectItem key={child.id} value={child.id}>
-                                                {child.name} ({child.grade})
-                                            </SelectItem>
-                                        ))}
+                                        {isLoading ? (
+                                            <div className="p-2 flex items-center justify-center">
+                                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                            </div>
+                                        ) : (
+                                            students.map(child => (
+                                                <SelectItem key={child.id} value={child.id}>
+                                                    {child.name} ({child.grade})
+                                                </SelectItem>
+                                            ))
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
