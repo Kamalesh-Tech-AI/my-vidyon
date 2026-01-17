@@ -1,7 +1,6 @@
 export type UserRole = 'student' | 'faculty' | 'institution' | 'admin' | 'parent';
 
 export interface User {
-  [x: string]: string;
   id: string;
   email: string;
   name: string;

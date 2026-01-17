@@ -8,7 +8,13 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "ws:install": "cd websocket-server && npm install",
+    "ws:dev": "cd websocket-server && node server.js",
+    "ws:start": "cd websocket-server && NODE_ENV=production node server.js",
+    "ws:test": "cd websocket-server && npm test",
+    "dev:all": "concurrently \"npm run dev\" \"npm run ws:dev\"",
+    "postinstall": "npm run ws:install"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

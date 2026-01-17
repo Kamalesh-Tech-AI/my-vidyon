@@ -112,16 +112,36 @@ export function InstitutionLeaveApproval() {
 
         fetchLeaves();
 
-        // Subscription
+        // Real-time subscription with auto-refresh
         const channel = supabase
             .channel('staff_leaves_changes')
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${user.institutionId}` },
-                () => {
+                (payload) => {
+                    console.log('📡 Real-time update received:', payload);
+
+                    // Show toast notification for different events
+                    if (payload.eventType === 'INSERT') {
+                        toast.info('New Leave Request', {
+                            description: 'A new leave request has been submitted',
+                        });
+                    } else if (payload.eventType === 'UPDATE') {
+                        toast.success('Leave Request Updated', {
+                            description: 'A leave request has been updated',
+                        });
+                    } else if (payload.eventType === 'DELETE') {
+                        toast.info('Leave Request Deleted', {
+                            description: 'A leave request has been removed',
+                        });
+                    }
+
+                    // Auto-refresh data immediately
                     fetchLeaves();
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log('📡 Subscription status:', status);
+            });
 
         return () => {
             supabase.removeChannel(channel);

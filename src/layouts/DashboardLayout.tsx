@@ -26,6 +26,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { NotificationPanel } from '@/components/notifications/NotificationPanel';
+import { RealtimeNotificationBell } from '@/components/RealtimeNotificationBell';
+import { RealtimeStatusIndicator } from '@/components/RealtimeStatusIndicator';
 
 interface NavItem {
   label: string;
@@ -108,21 +110,11 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
         )}
 
         <div className="flex items-center gap-2">
+          <RealtimeStatusIndicator />
           {!isBottomNavRole && <LanguageSelector />}
           {/* Hide LanguageSelector on mobile header for bottom nav roles to save space? Or keep it? keeping for now */}
           {isBottomNavRole && <LanguageSelector />}
-
-          <Sheet>
-            <SheetTrigger asChild>
-              <button className="p-2 rounded-lg hover:bg-muted transition-colors relative">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
-              </button>
-            </SheetTrigger>
-            <SheetContent className="w-[320px] p-0">
-              <NotificationPanel />
-            </SheetContent>
-          </Sheet>
+          <RealtimeNotificationBell />
         </div>
       </header>
 
@@ -190,10 +182,16 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
               )}
             </Link>
             <button
-              onClick={logout}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Logout button clicked');
+                logout();
+              }}
+              type="button"
               title="Logout"
               className={cn(
-                'p-2 rounded-lg text-sidebar-muted hover:text-destructive hover:bg-destructive/10 transition-colors',
+                'p-2 rounded-lg text-sidebar-muted hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer',
                 !sidebarOpen && 'hidden'
               )}
             >
@@ -243,11 +241,15 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
                   <span>View Profile</span>
                 </Link>
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Mobile logout clicked');
                     setMobileMenuOpen(false);
                     logout();
                   }}
-                  className="nav-link text-destructive hover:bg-destructive/10 w-full"
+                  type="button"
+                  className="nav-link text-destructive hover:bg-destructive/10 w-full cursor-pointer"
                 >
                   <LogOut className="w-5 h-5" />
                   <span>Logout</span>
@@ -322,11 +324,15 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
                       <span className="text-xs font-medium">Profile</span>
                     </Link>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Bottom nav logout clicked');
                         setMoreMenuOpen(false);
                         logout();
                       }}
-                      className="flex flex-col items-center justify-center p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors gap-2 text-center"
+                      type="button"
+                      className="flex flex-col items-center justify-center p-4 rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors gap-2 text-center cursor-pointer"
                     >
                       <LogOut className="w-8 h-8" />
                       <span className="text-xs font-medium">Logout</span>
@@ -363,19 +369,9 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
           </div>
 
           <div className="flex items-center gap-4">
+            <RealtimeStatusIndicator />
             <LanguageSelector />
-
-            <Sheet>
-              <SheetTrigger asChild>
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors relative">
-                  <Bell className="w-5 h-5 text-muted-foreground" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
-                </button>
-              </SheetTrigger>
-              <SheetContent className="w-[400px] sm:w-[540px] p-0">
-                <NotificationPanel />
-              </SheetContent>
-            </Sheet>
+            <RealtimeNotificationBell />
 
             <Link
               to={settingsPath}

@@ -254,13 +254,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [navigate, fetchUserProfile]);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
-    setState({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-    });
-    navigate('/login');
+    try {
+      console.log('🚪 Logging out...');
+
+      // Show loading toast
+      const loadingToast = toast.loading('Logging out...');
+
+      // Add timeout to prevent infinite hang
+      const signOutPromise = supabase.auth.signOut();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Logout timed out')), 5000)
+      );
+
+      try {
+        const { error } = await Promise.race([signOutPromise, timeoutPromise]) as any;
+
+        if (error) {
+          console.warn('Logout error (continuing anyway):', error);
+        }
+      } catch (timeoutError) {
+        console.warn('Logout timed out (continuing anyway):', timeoutError);
+      }
+
+      // Always clear state regardless of Supabase response
+      setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
+
+      // Success toast
+      toast.success('Logged out successfully', {
+        id: loadingToast,
+      });
+
+      console.log('✅ Logout successful');
+
+      // Navigate to login
+      navigate('/login');
+    } catch (error: any) {
+      console.error('Unexpected logout error:', error);
+
+      // Even on error, clear state and navigate
+      setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
+
+      toast.error('Logged out (with errors)', {
+        description: 'You have been logged out',
+      });
+
+      navigate('/login');
+    }
   }, [navigate]);
 
   const switchRole = useCallback((role: UserRole) => {
