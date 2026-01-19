@@ -24,7 +24,7 @@ type RealtimeChannel =
 interface WebSocketContextType {
     isConnected: boolean;
     subscribe: (channel: RealtimeChannel, callback: (data: any) => void) => () => void;
-    subscribeToTable: (tableName: string, callback: (data: any) => void) => () => void;
+    subscribeToTable: (tableName: string, callback: (data: any) => void, filter?: { event?: 'INSERT' | 'UPDATE' | 'DELETE' | '*'; schema?: string; filter?: string }) => () => void;
     broadcast: (channel: string, event: string, data: any) => Promise<any>;
     connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
 }
@@ -111,9 +111,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     /**
      * Subscribe to any table
      */
-    const subscribeToTable = useCallback((tableName: string, callback: (data: any) => void) => {
-        console.log(`📡 Subscribing to table ${tableName}...`);
-        return realtimeService.subscribeToTable(tableName, callback);
+    const subscribeToTable = useCallback((tableName: string, callback: (data: any) => void, filter?: { event?: 'INSERT' | 'UPDATE' | 'DELETE' | '*'; schema?: string; filter?: string }) => {
+        console.log(`📡 Subscribing to table ${tableName}...`, filter);
+        return realtimeService.subscribeToTable(tableName, callback, filter);
     }, []);
 
     /**

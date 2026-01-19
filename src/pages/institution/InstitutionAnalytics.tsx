@@ -27,7 +27,9 @@ import {
     Pie,
     Cell
 } from 'recharts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
+import { useWebSocketContext } from '@/context/WebSocketContext';
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 
@@ -42,7 +44,6 @@ export function InstitutionAnalytics() {
         totalRevenue: 0
     });
     const [departmentData, setDepartmentData] = useState<any[]>([]);
-    const [performanceData, setPerformanceData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -50,43 +51,26 @@ export function InstitutionAnalytics() {
 
         const fetchAnalytics = async () => {
             try {
-                // 1. Total Students
-                const { count: studentCount, error: sErr } = await supabase
-                    .from('students')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('institution_id', user.institutionId);
-
-                // 2. Total Faculty (Profiles with role faculty/teacher)
-                const { count: facultyCount, error: fErr } = await supabase
-                    .from('profiles')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('institution_id', user.institutionId)
-                    .in('role', ['faculty', 'teacher']);
-
-                // 3. Total Classes
-                const { count: classCount, error: cErr } = await supabase
-                    .from('classes')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('institution_id', user.institutionId);
-
-                // 4. Total Revenue (Sum of student_fees paid)
-                const { data: revenueData, error: rErr } = await supabase
-                    .from('student_fees')
-                    .select('amount_paid')
-                    .eq('institution_id', user.institutionId);
+                // Parallel fetching for performance
+                const [
+                    { count: studentCount },
+                    { count: facultyCount },
+                    { count: classCount },
+                    { data: revenueData },
+                    { data: deptData }
+                ] = await Promise.all([
+                    supabase.from('students').select('*', { count: 'exact', head: true }).eq('institution_id', user.institutionId),
+                    supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('institution_id', user.institutionId).in('role', ['faculty', 'teacher']),
+                    supabase.from('classes').select('*', { count: 'exact', head: true }).eq('institution_id', user.institutionId),
+                    supabase.from('student_fees').select('amount_paid').eq('institution_id', user.institutionId),
+                    supabase.from('subjects').select('department').eq('institution_id', user.institutionId)
+                ]);
 
                 const totalRev = revenueData?.reduce((sum, item) => sum + (Number(item.amount_paid) || 0), 0) || 0;
 
-                // 5. Department Data (derived from Subjects for now, or assume generic)
-                // Since we don't have a specific 'departments' table other than strings in subjects/staff, 
-                // we'll mock the distribution or query distinct departments from subjects.
-                const { data: deptData } = await supabase
-                    .from('subjects')
-                    .select('department')
-                    .eq('institution_id', user.institutionId);
-
+                // Process Department Data
                 const deptCounts: Record<string, number> = {};
-                deptData?.forEach(d => {
+                deptData?.forEach((d: any) => {
                     const dept = d.department || 'General';
                     deptCounts[dept] = (deptCounts[dept] || 0) + 1;
                 });
@@ -95,20 +79,22 @@ export function InstitutionAnalytics() {
                     name: k,
                     value: deptCounts[k]
                 }));
+                // Set department data indirectly or return it?
+                // For simplicity, we can update the state for chart separately or return it here.
+                // Let's modify the return type to include deptData or handle it in useEffect.
+                // For now, let's keep chart data in a separate useEffect or just update the state here if possible? 
+                // useQuery should be pure.
+                // Let's rely on onSuccess or just derive it in render.
+                // But deptData is needed for the chart.
+                // Let's return it all.
 
-                setStats({
+                return {
                     totalStudents: studentCount || 0,
                     totalFaculty: facultyCount || 0,
                     totalClasses: classCount || 0,
-                    totalRevenue: totalRev
-                });
-
-                if (deptChartData.length > 0) {
-                    setDepartmentData(deptChartData);
-                } else {
-                    // Fallback if no subjects
-                    setDepartmentData([{ name: 'General', value: 100 }]);
-                }
+                    totalRevenue: totalRev,
+                    deptChartData: deptChartData.length > 0 ? deptChartData : [{ name: 'General', value: 100 }]
+                };
 
                 // 6. Attendance Performance Data (Last 30 days)
                 const thirtyDaysAgo = new Date();
@@ -144,14 +130,50 @@ export function InstitutionAnalytics() {
 
             } catch (err) {
                 console.error("Error fetching analytics:", err);
-            } finally {
-                setLoading(false);
+                return { totalStudents: 0, totalFaculty: 0, totalClasses: 0, totalRevenue: 0, deptChartData: [] };
             }
+        },
+        enabled: !!user?.institutionId,
+    });
+
+    // Real-time subscriptions
+    useEffect(() => {
+        if (!user?.institutionId) return;
+
+        // Use specific filters for better performance and reliability
+        const unsubStudents = subscribeToTable('students',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubProfiles = subscribeToTable('profiles',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubClasses = subscribeToTable('classes',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubFees = subscribeToTable('student_fees',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubSubjects = subscribeToTable('subjects',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        return () => {
+            unsubStudents();
+            unsubProfiles();
+            unsubClasses();
+            unsubFees();
+            unsubSubjects();
         };
-
-        fetchAnalytics();
-
-    }, [user?.institutionId]);
+    }, [user?.institutionId, subscribeToTable, queryClient]);
 
 
 
@@ -249,7 +271,7 @@ export function InstitutionAnalytics() {
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
-                                    data={departmentData}
+                                    data={stats.deptChartData || []}
                                     cx="50%"
                                     cy="50%"
                                     innerRadius={60}
@@ -257,7 +279,7 @@ export function InstitutionAnalytics() {
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
-                                    {departmentData.map((entry, index) => (
+                                    {(stats.deptChartData || []).map((entry: any, index: number) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>

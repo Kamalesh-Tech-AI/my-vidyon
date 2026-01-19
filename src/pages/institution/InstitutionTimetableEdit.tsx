@@ -179,6 +179,16 @@ export function InstitutionTimetableEdit() {
             if (slotsToInsert.length > 0) {
                 await supabase.from('timetable_slots').insert(slotsToInsert);
             }
+
+            // Create notification for faculty
+            await supabase.from('notifications').insert({
+                user_id: facultyId,
+                title: 'Timetable Updated',
+                message: 'Your timetable has been updated by the administration. Please check your schedule.',
+                type: 'timetable',
+                date: new Date().toISOString(),
+                read: false,
+            });
         },
         onSuccess: () => {
             toast.success('Timetable saved successfully');

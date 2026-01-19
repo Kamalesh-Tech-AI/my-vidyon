@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BulkUploadService } from '@/services/BulkUploadService';
 import { useAuth } from '@/context/AuthContext';
+import { useWebSocketContext } from '@/context/WebSocketContext';
 import { Input } from "@/components/ui/input";
 import { Badge } from '@/components/common/Badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -97,26 +98,32 @@ export function InstitutionUsers() {
     });
 
     // --- REALTIME SUBSCRIPTION ---
+    const { subscribeToTable } = useWebSocketContext();
+
     useEffect(() => {
         if (!user?.institutionId) return;
 
-        const channel = supabase
-            .channel('institution-users-realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `institution_id=eq.${user.institutionId}` }, () => {
-                queryClient.invalidateQueries({ queryKey: ['institution-students'] });
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `institution_id=eq.${user.institutionId}` }, () => {
-                queryClient.invalidateQueries({ queryKey: ['institution-staff'] });
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'parents', filter: `institution_id=eq.${user.institutionId}` }, () => {
-                queryClient.invalidateQueries({ queryKey: ['institution-parents'] });
-            })
-            .subscribe();
+        // Subscribe to Students
+        const unsubStudents = subscribeToTable('students', () => {
+            queryClient.invalidateQueries({ queryKey: ['institution-students'] });
+        });
+
+        // Subscribe to Staff (profiles)
+        const unsubProfiles = subscribeToTable('profiles', () => {
+            queryClient.invalidateQueries({ queryKey: ['institution-staff'] });
+        });
+
+        // Subscribe to Parents
+        const unsubParents = subscribeToTable('parents', () => {
+            queryClient.invalidateQueries({ queryKey: ['institution-parents'] });
+        });
 
         return () => {
-            supabase.removeChannel(channel);
+            unsubStudents();
+            unsubProfiles();
+            unsubParents();
         };
-    }, [user?.institutionId, queryClient]);
+    }, [user?.institutionId, queryClient, subscribeToTable]);
 
 
     // --- HANDLERS ---

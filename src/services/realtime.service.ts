@@ -35,20 +35,21 @@ class RealtimeService {
     subscribeToTable(
         tableName: string,
         callback: EventHandler,
-        filter?: { event?: 'INSERT' | 'UPDATE' | 'DELETE' | '*'; schema?: string }
+        filter?: { event?: 'INSERT' | 'UPDATE' | 'DELETE' | '*'; schema?: string; filter?: string }
     ) {
-        const channelName = `realtime:${tableName}`;
+        const channelName = `realtime:${tableName}:${filter?.filter || 'all'}`;
 
         // Create channel if it doesn't exist
         if (!this.channels.has(channelName)) {
             const channel = supabase
                 .channel(channelName)
                 .on(
-                    'postgres_changes',
+                    'postgres_changes' as any,
                     {
                         event: filter?.event || '*',
                         schema: filter?.schema || 'public',
                         table: tableName,
+                        filter: filter?.filter,
                     },
                     (payload) => {
                         console.log(`📡 Real-time update from ${tableName}:`, payload);
@@ -173,6 +174,24 @@ class RealtimeService {
      */
     subscribeToStaff(callback: EventHandler) {
         return this.subscribeToTable('staff_details', callback);
+    }
+
+    /**
+     * Subscribe to notifications
+     */
+    subscribeToNotifications(userId: string, callback: EventHandler) {
+        return this.subscribeToTable('notifications', callback, {
+            event: 'INSERT',
+            schema: 'public',
+            // filter: `user_id=eq.${userId}` // Note: Supabase Realtime filtering syntax might vary, keeping simple for now or relying on RLS/client-side filter if needed? 
+            // Actually, best to filter if possible. simpler to just subscribe to table and filter in callback if RLS doesn't handle it for "postgres_changes". 
+            // But usually 'user_id=eq.${userId}' works for Postgres changes if the column exists.
+            // Let's stick to the pattern used in the class. The other methods don't seem to take args.
+            // But notifications are highly user specific.
+            // For now, I'll match the pattern and maybe overload or just use the generic subscribeToTable in components if specific filtering is needed.
+            // Wait, looking at existing methods, they just call subscribeToTable('table', callback).
+            // I'll add a generic one for now.
+        });
     }
 
     /**

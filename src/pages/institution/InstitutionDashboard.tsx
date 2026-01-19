@@ -136,6 +136,47 @@ export function InstitutionDashboard() {
 
   // 3. Compute Class Distribution (Simple Grouping from admissions for demo, ideal is aggregate query)
   // For now using mock until we write the complex aggregation content
+  // 4a. Fetch Recent Notifications / Leaves
+  // Since we don't have a single notification feed for institution yet, we simulate it by fetching pending staff leaves 
+  // or use the notifications table if it has institution-wide alerts. 
+  // For now, let's fetch pending staff leaves as they are the most critical 'notification' here.
+  const { data: recentLeaves = [], isLoading: recentLeavesLoading } = useQuery({
+    queryKey: ['institution-pending-leaves-notifs', user?.institutionId],
+    queryFn: async () => {
+      if (!user?.institutionId) return [];
+
+      // Fetch pending staff leaves
+      const { data: leaves } = await supabase
+        .from('staff_leaves')
+        .select(`
+                id,
+                leave_type,
+                from_date,
+                created_at,
+                staff_profile:profiles(full_name)
+            `)
+        .eq('institution_id', user.institutionId)
+        .eq('status', 'Pending')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // Map to notification structure
+      return (leaves || []).map((leave: any) => {
+        const staffName = Array.isArray(leave.staff_profile)
+          ? leave.staff_profile[0]?.full_name
+          : leave.staff_profile?.full_name;
+
+        return {
+          id: leave.id,
+          type: 'leave',
+          message: `${staffName || 'Staff Member'} requesting ${leave.leave_type}`,
+          created_at: leave.created_at
+        };
+      });
+    },
+    enabled: !!user?.institutionId
+  });
+
   const classDistribution = [
     { name: 'Grade 10', value: 25 },
     { name: 'Grade 9', value: 28 },
@@ -162,6 +203,9 @@ export function InstitutionDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_attendance', filter: `institution_id=eq.${user.institutionId}` }, () => {
         queryClient.invalidateQueries({ queryKey: ['institution-stats'] });
         refetchAttendance();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_leaves', filter: `institution_id=eq.${user.institutionId}` }, () => {
+        queryClient.invalidateQueries({ queryKey: ['institution-pending-leaves-notifs'] });
       })
       .subscribe();
 
@@ -352,49 +396,36 @@ export function InstitutionDashboard() {
         <div className="flex items-center justify-between mb-3 sm:mb-4">
           <div className="flex items-center gap-2">
             <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-warning" />
-            <h3 className="font-semibold text-sm sm:text-base">Notifications (Leave Requests)</h3>
+            <h3 className="font-semibold text-sm sm:text-base">Notifications (Recent Leave Requests)</h3>
           </div>
           <a href="/institution/notifications" className="text-xs sm:text-sm text-primary hover:underline">View All</a>
         </div>
         <div className="space-y-3">
-          {/* Mock Leave Request Notifications */}
-          <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
-            <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium">Dr. Robert Brown requesting leave.</p>
-              <p className="text-xs text-muted-foreground mt-1">Today • 10:30 AM</p>
-              <div className="mt-2">
-                <button
-                  onClick={() => navigate('/institution/leave-approval')}
-                  className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors font-medium border border-primary/20"
-                >
-                  Show Details
-                </button>
+          {recentLeavesLoading ? (
+            <div className="text-center py-4 text-sm text-muted-foreground">Loading notifications...</div>
+          ) : recentLeaves.length === 0 ? (
+            <div className="text-center py-4 text-sm text-muted-foreground">No recent notifications</div>
+          ) : (
+            recentLeaves.map((notif: any) => (
+              <div key={notif.id} className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
+                <div className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${notif.type === 'leave' ? 'bg-warning' : 'bg-institution'}`} />
+                <div>
+                  <p className="text-sm font-medium">{notif.message}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{new Date(notif.created_at).toLocaleDateString()} • {new Date(notif.created_at).toLocaleTimeString()}</p>
+                  {notif.type === 'leave' && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => navigate('/institution/leave-approval')}
+                        className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors font-medium border border-primary/20"
+                      >
+                        Show Details
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
-            <div className="w-2 h-2 mt-2 rounded-full bg-warning flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium">Mrs. Jennifer Lee requesting leave.</p>
-              <p className="text-xs text-muted-foreground mt-1">Yesterday • 4:15 PM</p>
-              <div className="mt-2">
-                <button
-                  onClick={() => navigate('/institution/leave-approval')}
-                  className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors font-medium border border-primary/20"
-                >
-                  Show Details
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50">
-            <div className="w-2 h-2 mt-2 rounded-full bg-institution flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium">New fee structure approved by board.</p>
-              <p className="text-xs text-muted-foreground mt-1">2 days ago • General</p>
-            </div>
-          </div>
+            ))
+          )}
         </div>
       </div>
     </InstitutionLayout>

@@ -31,6 +31,7 @@ export function FacultyLayout({ children }: { children: ReactNode }) {
     { label: 'Academic Calendar', href: '/faculty/calendar', icon: Calendar },
     { label: 'Timetable', href: '/faculty/timetable', icon: BarChart3 },
     { label: t.nav.announcements, href: '/faculty/announcements', icon: Megaphone },
+    { label: t.nav.notifications, href: '/faculty/notifications', icon: Megaphone },
     { label: 'Upload Certificate', href: '/faculty/upload-certificate', icon: FileText },
     { label: t.nav.leave, href: '/faculty/leave', icon: Calendar },
     { label: t.nav.settings, href: '/faculty/settings', icon: Settings },

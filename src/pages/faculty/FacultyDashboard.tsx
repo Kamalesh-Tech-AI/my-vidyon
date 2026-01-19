@@ -89,6 +89,15 @@ export function FacultyDashboard() {
           change="+2% this week"
           changeType="positive"
         />
+        <StatCard
+          title="Pending Reviews"
+          value={stats.pendingReviews}
+          icon={FileCheck}
+          iconColor="text-destructive"
+          change="Leave Requests"
+          onClick={() => navigate('/faculty/student-leaves')}
+          className="cursor-pointer hover:shadow-md transition-shadow"
+        />
       </div>
 
       {/* Main Content */}
@@ -157,6 +166,19 @@ export function FacultyDashboard() {
             >
               <FileCheck className="w-4 h-4 mr-2" />
               Manage Assignments
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => navigate('/faculty/student-leaves')}
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              Review Leave Requests
+              {stats.pendingReviews > 0 && (
+                <span className="ml-auto bg-destructive text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                  {stats.pendingReviews}
+                </span>
+              )}
             </Button>
           </div>
         </div>

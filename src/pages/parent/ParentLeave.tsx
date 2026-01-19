@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ParentLayout } from '@/layouts/ParentLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -12,19 +12,23 @@ import { Badge } from '@/components/common/Badge';
 import { useTranslation } from '@/i18n/TranslationContext';
 
 import { useAuth } from '@/context/AuthContext';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
+import { useWebSocketContext } from '@/context/WebSocketContext';
 
 export function ParentLeave() {
     const { t } = useTranslation();
     const { user } = useAuth();
+    const { subscribeToTable } = useWebSocketContext();
+    const queryClient = useQueryClient();
     const [selectedChild, setSelectedChild] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [reason, setReason] = useState('');
 
-    const { data: myChildren, isLoading } = useQuery({
+    // Fetch Parent's Children
+    const { data: myChildren, isLoading: childrenLoading } = useQuery({
         queryKey: ['parent-children', user?.id],
         queryFn: async () => {
             const { data: parentData, error: parentError } = await supabase
@@ -48,16 +52,21 @@ export function ParentLeave() {
 
             const { data: students, error: studentError } = await supabase
                 .from('students')
-                .select('id, name, class_name, class_id, section')
+                .select('*') // Fallback to * to avoid column errors
                 .in('id', studentIds);
 
-            if (studentError) throw studentError;
+            if (studentError) {
+                console.error('Error fetching students:', studentError);
+                throw studentError;
+            }
+
+            console.log('Fetched students:', students);
 
             return students.map(s => ({
                 id: s.id,
                 name: s.name,
                 grade: s.class_name || 'N/A',
-                classId: s.class_id,
+                classId: s.class_id, // This might be undefined if column doesn't exist
                 section: s.section
             }));
         },
@@ -65,6 +74,63 @@ export function ParentLeave() {
     });
 
     const students = myChildren || [];
+
+    // Fetch Leave History
+    const { data: leaveHistory = [], isLoading: historyLoading } = useQuery({
+        queryKey: ['parent-leave-history', user?.id],
+        queryFn: async () => {
+            // Get parent ID first (could be optimized with a custom hook or context)
+            const { data: parentData } = await supabase
+                .from('parents')
+                .select('id')
+                .eq('profile_id', user?.id)
+                .single();
+
+            if (!parentData) return [];
+
+            const { data, error } = await supabase
+                .from('leave_requests')
+                .select(`
+                    id,
+                    from_date,
+                    to_date,
+                    reason,
+                    status,
+                    created_at,
+                    student:students (name)
+                `)
+                .eq('parent_id', parentData.id)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return data;
+        },
+        enabled: !!user?.id
+    });
+
+    // Real-time Subscription
+    useEffect(() => {
+        if (!user?.id) return;
+
+        // Subscribe to leave_requests changes for this parent
+        // Note: RLS should handle security, so we can subscribe to the table generally
+        // and let RLS filter, or filter by specific column if needed.
+        // For simplicity and to ensure we get updates, we'll subscribe and then invalidate.
+
+        const unsubscribe = subscribeToTable('leave_requests', (payload) => {
+            console.log('Real-time leave update:', payload);
+            queryClient.invalidateQueries({ queryKey: ['parent-leave-history'] });
+
+            if (payload.eventType === 'UPDATE') {
+                toast.info(`Leave request status updated: ${payload.new.status}`);
+            }
+        });
+
+        return () => {
+            unsubscribe();
+        };
+    }, [user?.id, subscribeToTable, queryClient]);
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -101,10 +167,6 @@ export function ParentLeave() {
             if (leaveError) throw leaveError;
 
             // 3. Find Class Teacher to Notify
-            // We need class_id and section from the student.
-            // If class_id is missing on student, we try to rely on class_name (less reliable) or skip.
-            // Assuming student has class_id as per types.
-
             if (selectedStudent.classId && selectedStudent.section) {
                 const { data: classTeacherData } = await supabase
                     .from('faculty_subjects')
@@ -115,7 +177,6 @@ export function ParentLeave() {
                     .single();
 
                 if (classTeacherData?.faculty_profile_id) {
-                    // 4. Send Notification
                     await supabase
                         .from('notifications')
                         .insert({
@@ -136,9 +197,20 @@ export function ParentLeave() {
             setEndDate('');
             setReason('');
 
+            // Force refresh immediately (optimistic)
+            queryClient.invalidateQueries({ queryKey: ['parent-leave-history'] });
+
         } catch (error: any) {
             console.error('Error submitting leave:', error);
             toast.error(error.message || 'Failed to submit leave request');
+        }
+    };
+
+    const getStatusBadge = (status: string) => {
+        switch (status.toLowerCase()) {
+            case 'approved': return <Badge variant="success">{t.parent.leave.approved}</Badge>;
+            case 'rejected': return <Badge variant="destructive">{t.parent.leave.rejected || 'Rejected'}</Badge>;
+            default: return <Badge variant="warning">{t.parent.leave.pending}</Badge>;
         }
     };
 
@@ -166,7 +238,7 @@ export function ParentLeave() {
                                         <SelectValue placeholder={t.parent.leave.selectChildPlaceholder} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {isLoading ? (
+                                        {childrenLoading ? (
                                             <div className="p-2 flex items-center justify-center">
                                                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                             </div>
@@ -229,33 +301,31 @@ export function ParentLeave() {
                             <h3 className="font-semibold text-lg">{t.parent.leave.history}</h3>
                         </div>
 
-                        <div className="space-y-4">
-                            {/* Mock History Items */}
-                            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <h4 className="font-medium">Alex Johnson</h4>
-                                        <span className="text-sm text-muted-foreground">Sick Leave</span>
+                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                            {historyLoading ? (
+                                <div className="flex justify-center p-4">
+                                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                </div>
+                            ) : leaveHistory.length === 0 ? (
+                                <div className="text-center p-4 text-muted-foreground bg-muted/20 rounded-lg">
+                                    No leave history found.
+                                </div>
+                            ) : (
+                                leaveHistory.map((req: any) => (
+                                    <div key={req.id} className="p-4 rounded-lg bg-muted/30 border border-border">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h4 className="font-medium">{req.student?.name || 'Unknown Student'}</h4>
+                                                <span className="text-sm text-muted-foreground">{req.reason}</span>
+                                            </div>
+                                            {getStatusBadge(req.status)}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                            {req.from_date} - {req.to_date}
+                                        </div>
                                     </div>
-                                    <Badge variant="success">{t.parent.leave.approved}</Badge>
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    Nov 12, 2025 - Nov 13, 2025 (2 days)
-                                </div>
-                            </div>
-
-                            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <h4 className="font-medium">Emily Johnson</h4>
-                                        <span className="text-sm text-muted-foreground">Family Function</span>
-                                    </div>
-                                    <Badge variant="warning">{t.parent.leave.pending}</Badge>
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    Dec 24, 2025 - Dec 25, 2025 (2 days)
-                                </div>
-                            </div>
+                                ))
+                            )}
                         </div>
                     </div>
 

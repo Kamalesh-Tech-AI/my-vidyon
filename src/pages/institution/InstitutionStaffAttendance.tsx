@@ -18,10 +18,12 @@ export function InstitutionStaffAttendance() {
         if (!user?.institutionId) return;
 
         const date = new Date().toISOString().split('T')[0];
+        const timestamp = Date.now();
         const payload = {
             institutionId: user.institutionId,
             date: date,
-            signature: CryptoJS.SHA256(user.institutionId + date + SECRET_KEY).toString(),
+            timestamp: timestamp, // Added for dynamic refresh
+            signature: CryptoJS.SHA256(user.institutionId + date + timestamp + SECRET_KEY).toString(),
         };
 
         setQrData(JSON.stringify(payload));
