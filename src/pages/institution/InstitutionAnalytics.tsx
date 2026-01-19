@@ -103,11 +103,31 @@ export function InstitutionAnalytics() {
     useEffect(() => {
         if (!user?.institutionId) return;
 
-        const unsubStudents = subscribeToTable('students', () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }));
-        const unsubProfiles = subscribeToTable('profiles', () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] })); // for faculty count
-        const unsubClasses = subscribeToTable('classes', () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }));
-        const unsubFees = subscribeToTable('student_fees', () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }));
-        const unsubSubjects = subscribeToTable('subjects', () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }));
+        // Use specific filters for better performance and reliability
+        const unsubStudents = subscribeToTable('students',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubProfiles = subscribeToTable('profiles',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubClasses = subscribeToTable('classes',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubFees = subscribeToTable('student_fees',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
+
+        const unsubSubjects = subscribeToTable('subjects',
+            () => queryClient.invalidateQueries({ queryKey: ['institution-analytics'] }),
+            { filter: `institution_id=eq.${user.institutionId}` }
+        );
 
         return () => {
             unsubStudents();
