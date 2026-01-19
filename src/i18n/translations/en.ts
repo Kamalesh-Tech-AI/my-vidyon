@@ -214,6 +214,7 @@ export const en = {
             submitRequest: "Submit Request",
             approved: "Approved",
             pending: "Pending",
+            rejected: "Rejected",
         },
         notifications: {
             title: "Notifications & Alerts",

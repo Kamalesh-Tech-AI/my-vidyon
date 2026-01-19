@@ -46,6 +46,7 @@ import { FacultyMarks } from "./pages/faculty/FacultyMarks";
 import { FacultyExams } from "./pages/faculty/FacultyExams";
 
 import { FacultyStudents } from "./pages/faculty/FacultyStudents";
+import { FacultyStudentLeaves } from "@/pages/faculty/FacultyStudentLeaves";
 import { FacultyAnnouncements } from "./pages/faculty/FacultyAnnouncements";
 import { FacultyLeave } from "./pages/faculty/FacultyLeave";
 import { CreateAssignment } from "./pages/faculty/CreateAssignment";
@@ -174,6 +175,7 @@ const App = () => {
                     <Route path="/faculty/exams" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyExams /></ProtectedRoute>} />
 
                     <Route path="/faculty/students" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyStudents /></ProtectedRoute>} />
+                    <Route path="/faculty/student-leaves" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyStudentLeaves /></ProtectedRoute>} />
                     <Route path="/faculty/students/:rollNo" element={<ProtectedRoute allowedRoles={['faculty']}><StudentProfile /></ProtectedRoute>} />
                     <Route path="/faculty/announcements" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyAnnouncements /></ProtectedRoute>} />
                     <Route path="/faculty/upload-certificate" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyUploadCertificate /></ProtectedRoute>} />
