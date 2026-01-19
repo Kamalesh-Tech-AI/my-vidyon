@@ -40,45 +40,101 @@ export function RealtimeNotificationBell() {
 
     // Subscribe to leave requests (for institution/admin)
     useEffect(() => {
-        if (!user || !['institution', 'admin'].includes(user.role)) return;
+        if (!user) return;
 
-        // Subscribe to student leave requests
-        const unsubscribeStudentLeaves = subscribeToTable('leave_requests', (payload) => {
-            console.log('📬 Student Leave request update:', payload);
-            if (payload.eventType === 'INSERT') {
-                // Logic for student leaves if needed, or generic
-            }
-        });
+        let unsubscribeStudentLeaves: () => void = () => { };
+        let unsubscribeStaffLeaves: () => void = () => { };
 
-        // Subscribe to STAFF leave requests
-        const unsubscribeStaffLeaves = subscribeToTable('staff_leaves', (payload) => {
-            console.log('📬 Staff Leave request update:', payload);
+        if (['institution', 'admin'].includes(user.role)) {
+            // Subscribe to student leave requests
+            unsubscribeStudentLeaves = subscribeToTable('leave_requests', (payload) => {
+                console.log('📬 Student Leave request update:', payload);
+                if (payload.eventType === 'INSERT') {
+                    // Logic for student leaves if needed, or generic
+                }
+            });
 
+            // Subscribe to STAFF leave requests (for institution/admin to see new requests)
+            unsubscribeStaffLeaves = subscribeToTable('staff_leaves', (payload) => {
+                console.log('📬 Staff Leave request update:', payload);
+
+                if (payload.eventType === 'INSERT') {
+                    const notification: Notification = {
+                        id: payload.new.id || Date.now().toString(),
+                        title: 'New Staff Leave Request',
+                        message: `A staff member has submitted a ${payload.new.leave_type || 'leave'} request`,
+                        type: 'info',
+                        timestamp: Date.now(),
+                        read: false,
+                        table: 'staff_leaves',
+                        eventType: 'INSERT',
+                    };
+
+                    setNotifications(prev => [notification, ...prev].slice(0, 20));
+                    setUnreadCount(prev => prev + 1);
+
+                    toast.info(notification.title, {
+                        description: notification.message,
+                    });
+                }
+            });
+        }
+
+        // For Faculty/Staff: Notify when THEIR leave is approved/rejected
+        if (['faculty', 'teacher', 'staff'].includes(user.role)) {
+            // Assuming match on staff_id or user_id. We'll try user.id first.
+            // Filter: staff_id=eq.${user.id}
+            unsubscribeStaffLeaves = subscribeToTable('staff_leaves', (payload) => {
+                console.log('📬 Staff Leave Update for User:', payload);
+                if (payload.eventType === 'UPDATE' && (payload.new.staff_id === user.id || payload.new.user_id === user.id)) {
+                    if (payload.new.status !== payload.old.status) {
+                        const notification: Notification = {
+                            id: payload.new.id || Date.now().toString(),
+                            title: `Leave Request ${payload.new.status}`,
+                            message: `Your leave request has been ${payload.new.status.toLowerCase()}`,
+                            type: payload.new.status === 'Approved' ? 'success' : 'error',
+                            timestamp: Date.now(),
+                            read: false,
+                            table: 'staff_leaves',
+                            eventType: 'UPDATE',
+                        };
+                        setNotifications(prev => [notification, ...prev].slice(0, 20));
+                        setUnreadCount(prev => prev + 1);
+                        toast(notification.title, { description: notification.message });
+                    }
+                }
+            });
+        }
+
+        return () => {
+            if (unsubscribeStudentLeaves) unsubscribeStudentLeaves();
+            if (unsubscribeStaffLeaves) unsubscribeStaffLeaves();
+        };
+    }, [subscribeToTable, user]);
+
+    // Subscribe to Academic Calendar (All Roles)
+    useEffect(() => {
+        if (!user) return;
+
+        const unsubscribe = subscribeToTable('academic_events', (payload) => {
+            console.log('📬 Academic Event update:', payload);
             if (payload.eventType === 'INSERT') {
                 const notification: Notification = {
                     id: payload.new.id || Date.now().toString(),
-                    title: 'New Staff Leave Request',
-                    message: `A staff member has submitted a ${payload.new.leave_type || 'leave'} request`,
+                    title: 'New Academic Event',
+                    message: `New event added: ${payload.new.title}`,
                     type: 'info',
                     timestamp: Date.now(),
                     read: false,
-                    table: 'staff_leaves',
+                    table: 'academic_events', // Mapped to calendar route
                     eventType: 'INSERT',
                 };
-
                 setNotifications(prev => [notification, ...prev].slice(0, 20));
                 setUnreadCount(prev => prev + 1);
-
-                toast.info(notification.title, {
-                    description: notification.message,
-                });
+                toast.info(notification.title, { description: notification.message });
             }
         });
-
-        return () => {
-            unsubscribeStudentLeaves();
-            unsubscribeStaffLeaves();
-        };
+        return unsubscribe;
     }, [subscribeToTable, user]);
 
     // Subscribe to assignments (for students/faculty)
@@ -255,7 +311,13 @@ export function RealtimeNotificationBell() {
         } else if (notification.table === 'grades') {
             navigate('/student/grades');
         } else if (notification.table === 'announcements') {
-            navigate(user?.role === 'student' ? '/student/notifications' : '/faculty/announcements'); // Adjust as needed
+            navigate(user?.role === 'student' ? '/student/notifications' : '/faculty/announcements');
+        } else if (notification.table === 'academic_events') {
+            // Route to calendar based on role
+            if (user?.role === 'institution') navigate('/institution/calendar');
+            else if (user?.role === 'student') navigate('/student/calendar');
+            else if (user?.role === 'parent') navigate('/parent/calendar');
+            else navigate('/faculty/calendar');
         }
     };
 
