@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
@@ -40,6 +40,49 @@ export function TimetableManagement() {
     const [editingSlot, setEditingSlot] = useState<EditingSlot | null>(null);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState<{ day: string; period: number } | null>(null);
+
+    // Real-time subscription for timetable updates
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const channel = supabase
+            .channel(`timetable-updates-${user.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'timetable_slots',
+                },
+                (payload: any) => {
+                    console.log('Real-time timetable update received:', payload);
+
+                    // Specific logic to check if update is relevant to this user
+                    // 1. If the slot belongs to this faculty (faculty_id matches)
+                    // 2. Or if the slot belongs to the class this faculty manages (class_id matches 10th A)
+                    // Since payload might not have all details, safest to invalidate if we are unsure, 
+                    // but we can check payload.new or payload.old
+
+                    const newData = payload.new;
+                    const oldData = payload.old;
+
+                    const relevantFacultyId = newData?.faculty_id || oldData?.faculty_id;
+
+                    if (relevantFacultyId === user.id) {
+                        queryClient.invalidateQueries({ queryKey: ['faculty-my-schedule', user.id] });
+                        toast.info('Your schedule has been updated');
+                    }
+
+                    // Also invalidate class timetable if relevant (simplified check for now)
+                    queryClient.invalidateQueries({ queryKey: ['class-timetable-10th-a'] });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user?.id, queryClient]);
 
     // Fetch faculty's personal schedule (created by institution)
     const { data: mySchedule = [], isLoading: isLoadingSchedule } = useQuery({

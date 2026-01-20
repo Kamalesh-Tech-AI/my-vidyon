@@ -283,6 +283,21 @@ export function InstitutionTimetable() {
             } else {
                 console.log('[INSTITUTION] No subject selected, slot deleted only');
             }
+
+            // Send notification to faculty
+            try {
+                await supabase.from('notifications').insert({
+                    user_id: selectedFaculty.id,
+                    title: 'Timetable Updated',
+                    message: `Your timetable for ${editingSlot.day} Period ${editingSlot.period} has been updated.`,
+                    type: 'timetable',
+                    date: new Date().toISOString(),
+                    read: false,
+                });
+            } catch (notifyError) {
+                console.error('Failed to send notification:', notifyError);
+                // Don't block the success of the timetable update if notification fails
+            }
         },
         onSuccess: () => {
             console.log('Slot saved successfully, refetching timetable...');

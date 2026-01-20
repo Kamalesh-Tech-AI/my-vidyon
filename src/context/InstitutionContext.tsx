@@ -270,6 +270,23 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
                 }));
                 const { error: insertError } = await supabase.from('faculty_subjects').insert(toInsert);
                 if (insertError) throw insertError;
+
+                // Send Notifications to newly assigned staff
+                const subjectName = allSubjectsList.find(s => s.id === subjectId)?.name || 'Subject';
+                const className = allClasses.find(c => c.id === classId && c.section === section)?.name || 'Class';
+
+                // We should ideally diff with previous to filter only NEW assignments, but for now notifying current set is okay or simplified.
+                // To be precise: notify all in staffIds.
+                const notifications = staffIds.map(fid => ({
+                    user_id: fid,
+                    title: 'New Subject Assignment',
+                    message: `You have been assigned to teach ${subjectName} for ${className} - Section ${section}.`,
+                    type: 'system',
+                    date: new Date().toISOString(),
+                    read: false
+                }));
+
+                await supabase.from('notifications').insert(notifications);
             }
 
             toast.success("Staff assigned successfully!");
@@ -277,7 +294,7 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
             console.error("Assign staff error:", e);
             toast.error(e.message || "Failed to assign staff");
         }
-    }, [institutionId]);
+    }, [institutionId, allSubjectsList, allClasses]);
 
     const getClassTeacher = useCallback((classId: string, section: string) => {
         return classTeachers[classId]?.[section];
@@ -315,6 +332,17 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
                     });
 
                 if (insertError) throw insertError;
+
+                // Send Notification
+                const className = allClasses.find(c => c.id === classId && c.section === section)?.name || 'Class';
+                await supabase.from('notifications').insert({
+                    user_id: teacherId,
+                    title: 'Class Teacher Assignment',
+                    message: `You have been assigned as the Class Teacher for ${className} - Section ${section}.`,
+                    type: 'system',
+                    date: new Date().toISOString(),
+                    read: false
+                });
             }
 
             toast.success("Class teacher assigned!");
@@ -322,7 +350,7 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
             console.error("Assign class teacher error:", e);
             toast.error(e.message);
         }
-    }, [institutionId]);
+    }, [institutionId, allClasses]);
 
     // Deprecated methods
     const addStaffToSubject = useCallback((subjectId: string, staff: StaffMember) => {

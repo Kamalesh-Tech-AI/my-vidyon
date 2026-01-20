@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
 interface DashboardStats {
@@ -48,27 +49,31 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         gcTime: 10 * 60 * 1000,
     });
 
-    // 2. Students in Faculty's Assigned Classes
+    // 2. Students in Faculty's Assigned Classes (Changed to use faculty_subjects)
     const { data: myStudents = 0 } = useQuery({
         queryKey: ['faculty-my-students', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
 
-            // Get faculty's assigned class
-            const { data: staffDetails } = await supabase
-                .from('staff_details')
-                .select('class_assigned, section_assigned')
-                .eq('profile_id', facultyId)
+            // Get faculty's assigned class from faculty_subjects
+            const { data: assignment } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    section,
+                    classes:class_id (name)
+                `)
+                .eq('faculty_profile_id', facultyId)
+                .eq('assignment_type', 'class_teacher')
                 .single();
 
-            if (!staffDetails?.class_assigned) return 0;
+            if (!(assignment?.classes as any)?.name) return 0;
 
             // Count students in that class
             const { count } = await supabase
                 .from('students')
                 .select('id', { count: 'exact', head: true })
-                .eq('class_name', staffDetails.class_assigned)
-                .eq('section', staffDetails.section_assigned || 'A');
+                .eq('class_name', (assignment.classes as any)?.name)
+                .eq('section', assignment.section || 'A');
 
             return count || 0;
         },
@@ -89,7 +94,8 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
           subjects:subject_id (id, name),
           classes:class_id (id, name)
         `)
-                .eq('faculty_profile_id', facultyId);
+                .eq('faculty_profile_id', facultyId)
+                .eq('assignment_type', 'subject_staff'); // Filter only subjects
 
             if (error) throw error;
 
@@ -169,21 +175,25 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         queryFn: async () => {
             if (!facultyId) return 0;
 
-            // Get faculty's assigned class first
-            const { data: staffDetails } = await supabase
-                .from('staff_details')
-                .select('class_assigned, section_assigned')
-                .eq('profile_id', facultyId)
+            // Get faculty's assigned class
+            const { data: assignment } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    section,
+                    classes:class_id (name)
+                `)
+                .eq('faculty_profile_id', facultyId)
+                .eq('assignment_type', 'class_teacher')
                 .single();
 
-            if (!staffDetails?.class_assigned) return 0;
+            if (!(assignment?.classes as any)?.name) return 0;
 
             // Get students in this class
             const { data: students } = await supabase
                 .from('students')
                 .select('id')
-                .eq('class_name', staffDetails.class_assigned)
-                .eq('section', staffDetails.section_assigned || 'A');
+                .eq('class_name', (assignment.classes as any).name)
+                .eq('section', assignment.section || 'A');
 
             if (!students?.length) return 0;
             const studentIds = students.map(s => s.id);
@@ -207,7 +217,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         myStudents,
         activeSubjects: assignedSubjects.length,
         todayClasses: todaySchedule.length,
-        pendingReviews, // Now dynamic
+        pendingReviews,
         avgAttendance: totalStudents > 0
             ? `${Math.round((todayAttendanceCount / totalStudents) * 100)}%`
             : '0%',
@@ -219,7 +229,6 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
 
         const channel = supabase
             .channel('faculty-dashboard-realtime')
-            // ... (previous student/subject/slots/staff subscriptions)
             .on(
                 'postgres_changes',
                 {
@@ -250,24 +259,15 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'staff_attendance',
-                    filter: `institution_id=eq.${institutionId}`,
-                },
-                () => {
-                    // Logic to refresh staff stats if needed
-                }
-            )
-            // Subject assignments change
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
                     table: 'faculty_subjects',
                     filter: `faculty_profile_id=eq.${facultyId}`,
                 },
                 () => {
+                    // Update both subjects list AND my-students/pending-leaves if class teacher assignment changed
                     queryClient.invalidateQueries({ queryKey: ['faculty-assigned-subjects'] });
+                    queryClient.invalidateQueries({ queryKey: ['faculty-my-students'] });
+                    queryClient.invalidateQueries({ queryKey: ['faculty-pending-leaves'] });
+                    toast.info('Your assignments have been updated');
                 }
             )
             // Schedule changes
@@ -283,21 +283,6 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                     queryClient.invalidateQueries({ queryKey: ['faculty-today-schedule'] });
                 }
             )
-            // Class assignment changes
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'staff_details',
-                    filter: `profile_id=eq.${facultyId}`,
-                },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['faculty-my-students'] });
-                    // Also invalidate pending leaves as students might have changed
-                    queryClient.invalidateQueries({ queryKey: ['faculty-pending-leaves'] });
-                }
-            )
             // New Leave Requests
             .on(
                 'postgres_changes',
@@ -305,12 +290,6 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                     event: '*',
                     schema: 'public',
                     table: 'leave_requests',
-                    // Note: Ideally we filter by student_id IN (...) but supabase realtime filters are simple.
-                    // We can filter by institution if we had that column on leave_requests, or just listen to all and let invalidation handle it.
-                    // Given leave_requests links to student -> institution, we can't easily filter by institution_id directly here unless we add it to the table.
-                    // For now, we will listen to all leave_requests and invalidate. It's safe but slightly chatty.
-                    // Improving: filter on UPDATE/INSERT where student_id is relevant? Hard to do in static filter string.
-                    // We'll rely on global table events.
                 },
                 () => {
                     queryClient.invalidateQueries({ queryKey: ['faculty-pending-leaves'] });
