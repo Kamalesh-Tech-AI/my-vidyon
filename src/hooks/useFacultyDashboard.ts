@@ -32,7 +32,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     const queryClient = useQueryClient();
 
     // 1. Total Students in Institution
-    const { data: totalStudents = 0 } = useQuery({
+    const { data: totalStudents = 0, isLoading: isTotalStudentsLoading } = useQuery({
         queryKey: ['faculty-total-students', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -50,7 +50,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 2. Students in Faculty's Assigned Classes (Changed to use faculty_subjects)
-    const { data: myStudents = 0 } = useQuery({
+    const { data: myStudents = 0, isLoading: isMyStudentsLoading } = useQuery({
         queryKey: ['faculty-my-students', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
@@ -82,7 +82,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 3. Faculty's Assigned Subjects
-    const { data: assignedSubjects = [] } = useQuery({
+    const { data: assignedSubjects = [], isLoading: isAssignedSubjectsLoading } = useQuery({
         queryKey: ['faculty-assigned-subjects', facultyId],
         queryFn: async () => {
             if (!facultyId) return [];
@@ -113,7 +113,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 4. Today's Schedule
-    const { data: todaySchedule = [] } = useQuery({
+    const { data: todaySchedule = [], isLoading: isTodayScheduleLoading } = useQuery({
         queryKey: ['faculty-today-schedule', facultyId],
         queryFn: async () => {
             if (!facultyId) return [];
@@ -150,7 +150,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 5. Today's Attendance Count
-    const { data: todayAttendanceCount = 0 } = useQuery({
+    const { data: todayAttendanceCount = 0, isLoading: isTodayAttendanceLoading } = useQuery({
         queryKey: ['faculty-today-attendance', institutionId],
         queryFn: async () => {
             if (!institutionId) return 0;
@@ -170,7 +170,7 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
     });
 
     // 6. Pending Leave Requests (For Faculty Assigned Classes)
-    const { data: pendingReviews = 0 } = useQuery({
+    const { data: pendingReviews = 0, isLoading: isPendingReviewsLoading } = useQuery({
         queryKey: ['faculty-pending-leaves', facultyId],
         queryFn: async () => {
             if (!facultyId) return 0;
@@ -306,6 +306,12 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
         stats,
         assignedSubjects,
         todaySchedule,
-        isLoading: false, // All queries have defaults
+        isLoading:
+            isTotalStudentsLoading ||
+            isMyStudentsLoading ||
+            isAssignedSubjectsLoading ||
+            isTodayScheduleLoading ||
+            isTodayAttendanceLoading ||
+            isPendingReviewsLoading,
     };
 }

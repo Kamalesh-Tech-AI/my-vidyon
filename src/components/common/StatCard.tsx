@@ -9,6 +9,7 @@ interface StatCardProps {
   icon: LucideIcon;
   iconColor?: string;
   className?: string;
+  onClick?: () => void;
 }
 
 export function StatCard({
@@ -19,9 +20,13 @@ export function StatCard({
   icon: Icon,
   iconColor = 'text-primary',
   className,
+  onClick,
 }: StatCardProps) {
   return (
-    <div className={cn('stat-card animate-fade-in p-4 sm:p-6', className)}>
+    <div
+      className={cn('stat-card animate-fade-in p-4 sm:p-6', className)}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-0.5 sm:space-y-1 min-w-0 flex-1">
           <p className="text-xs sm:text-sm text-muted-foreground truncate">{title}</p>
