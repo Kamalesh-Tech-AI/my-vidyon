@@ -171,7 +171,7 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
       {/* Left Side: Login Form */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 lg:p-16 relative">
+      <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 lg:p-16 relative">
         {/* Language Selector */}
         <div className="absolute top-8 left-8 lg:left-auto lg:right-8">
           <LanguageSelector />

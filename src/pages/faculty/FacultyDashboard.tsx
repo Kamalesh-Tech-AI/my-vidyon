@@ -30,7 +30,7 @@ export function FacultyDashboard() {
   );
 
   // Show loader for minimum time
-  const showLoader = useMinimumLoadingTime(isLoading, 1500);
+  const showLoader = useMinimumLoadingTime(isLoading, 500);
 
   const handleCreateAssignment = () => {
     toast.success('Assignment creation form opened');

@@ -88,7 +88,7 @@ export function AdminDashboard() {
   const isLoading = isStatsLoading || isActivitiesLoading || isPendingLoading;
 
   // Ensure loader displays for minimum 1.5 seconds for smooth UX
-  const showLoader = useMinimumLoadingTime(isLoading, 1500);
+  const showLoader = useMinimumLoadingTime(isLoading, 500);
 
   useEffect(() => {
     // Subscribe to platform activities for real-time feed

@@ -340,7 +340,7 @@ export function InstitutionTimetable() {
         });
     };
 
-    const showLoader = useMinimumLoadingTime(isLoadingFaculty, 1000);
+    const showLoader = useMinimumLoadingTime(isLoadingFaculty, 500);
 
     const filteredFaculties = faculties.filter((f: any) =>
         f.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||

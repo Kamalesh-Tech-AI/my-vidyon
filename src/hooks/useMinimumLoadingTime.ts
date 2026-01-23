@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
  */
 export function useMinimumLoadingTime(
     isActuallyLoading: boolean,
-    minDisplayTime: number = 1500
+    minDisplayTime: number = 500
 ): boolean {
     const [showLoader, setShowLoader] = useState(true);
     const [startTime] = useState(Date.now());

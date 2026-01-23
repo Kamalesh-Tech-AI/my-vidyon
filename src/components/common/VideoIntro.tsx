@@ -68,7 +68,7 @@ const VideoIntro = ({ onComplete, showOnce = false }: VideoIntroProps) => {
             {/* Video Element */}
             <video
                 ref={videoRef}
-                className={`w-full h-full object-contain transition-opacity duration-500 ${isVideoLoaded ? 'opacity-100' : 'opacity-0'
+                className={`w-full h-full object-cover md:object-contain transition-opacity duration-500 ${isVideoLoaded ? 'opacity-100' : 'opacity-0'
                     }`}
                 onEnded={handleVideoEnd}
                 onLoadedData={handleVideoLoaded}
@@ -76,45 +76,13 @@ const VideoIntro = ({ onComplete, showOnce = false }: VideoIntroProps) => {
                 muted
                 preload="auto"
             >
-                <source src="/Final_1.mp4" type="video/mp4" />
+                <source src="/intro-video.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
             </video>
 
-            {/* Skip Button - appears after video starts loading */}
-            {isVideoLoaded && (
-                <button
-                    onClick={handleSkip}
-                    className="absolute bottom-8 right-8 px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm transition-all duration-300 hover:scale-105 active:scale-95 border border-white/20 shadow-lg animate-fade-in"
-                >
-                    <span className="flex items-center gap-2 font-medium">
-                        Skip
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        >
-                            <polygon points="5 4 15 12 5 20 5 4" />
-                            <line x1="19" y1="5" x2="19" y2="19" />
-                        </svg>
-                    </span>
-                </button>
-            )}
 
-            {/* Loading indicator while video loads */}
-            {!isVideoLoaded && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
-                        <span className="text-white/80 text-sm font-medium">Loading video...</span>
-                    </div>
-                </div>
-            )}
+
+
 
             <style>{`
         .duration-800 {

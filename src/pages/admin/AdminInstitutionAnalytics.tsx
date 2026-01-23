@@ -35,7 +35,7 @@ export function AdminInstitutionAnalytics() {
     const [statusFilter, setStatusFilter] = useState<string>('all');
 
     // Ensure loader displays for minimum 2.5 seconds for analytics
-    const showLoader = useMinimumLoadingTime(loading, 2500);
+    const showLoader = useMinimumLoadingTime(loading, 500);
 
     useEffect(() => {
         fetchAnalyticsData();

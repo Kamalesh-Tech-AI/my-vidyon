@@ -446,7 +446,7 @@ export function TimetableManagement() {
         });
     };
 
-    const showLoader = useMinimumLoadingTime(isLoadingSchedule || isLoadingClassTimetable, 1000);
+    const showLoader = useMinimumLoadingTime(isLoadingSchedule || isLoadingClassTimetable, 500);
 
     if (showLoader) {
         return (

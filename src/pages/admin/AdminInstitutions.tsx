@@ -85,7 +85,7 @@ export function AdminInstitutions() {
   });
 
   // Ensure loader displays for minimum 2 seconds for institutions
-  const showLoader = useMinimumLoadingTime(isLoading, 2000);
+  const showLoader = useMinimumLoadingTime(isLoading, 500);
 
   useEffect(() => {
     const channel = supabase

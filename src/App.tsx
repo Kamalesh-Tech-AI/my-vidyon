@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import Loader from "@/components/common/Loader";
+
 import VideoIntro from "@/components/common/VideoIntro";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -122,32 +122,20 @@ const queryClient = new QueryClient({
 
 const App = () => {
   const [showVideo, setShowVideo] = useState(true);
-  const [loading, setLoading] = useState(false);
+
 
   const handleVideoComplete = () => {
     setShowVideo(false);
-    setLoading(true);
   };
 
-  useEffect(() => {
-    if (loading) {
-      const timer = setTimeout(() => {
-        setLoading(false);
-      }, 3000);
 
-      return () => clearTimeout(timer);
-    }
-  }, [loading]);
 
   // Show video intro first
   if (showVideo) {
     return <VideoIntro onComplete={handleVideoComplete} />;
   }
 
-  // Then show loader
-  if (loading) {
-    return <Loader />;
-  }
+
 
   return (
     <QueryClientProvider client={queryClient}>
