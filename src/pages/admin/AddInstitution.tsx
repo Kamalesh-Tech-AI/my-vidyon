@@ -478,8 +478,31 @@ export function AddInstitution() {
         // Final validation across all critical steps
         if (!validateStep(1) || !validateStep(2)) return;
 
+        // Check network connectivity
+        if (!navigator.onLine) {
+            toast.error('No internet connection. Please check your network and try again.');
+            return;
+        }
+
+        // Validate Supabase configuration
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseKey || supabaseUrl === 'YOUR_SUPABASE_URL') {
+            toast.error('Supabase is not configured. Please check your environment variables.');
+            console.error('❌ Missing Supabase configuration:', { supabaseUrl, hasKey: !!supabaseKey });
+            return;
+        }
+
         setIsSubmitting(true);
         const loadingToast = toast.loading('Initializing onboarding sequence...');
+
+        console.log('🚀 Starting institution onboarding...', {
+            institutionId,
+            institutionName,
+            isEditMode,
+            hasLogo: !!logo
+        });
 
         try {
             // 1. Upload Logo if exists
@@ -554,17 +577,94 @@ export function AddInstitution() {
             }
 
             // Perform UPSERT based on 'institution_id' which is our unique business key
-            const { error: instError } = await supabase
-                .from('institutions')
-                .upsert([institutionData], { onConflict: 'institution_id' });
+            toast.loading('Step 2/6: Creating institution record...', { id: loadingToast });
+            console.log('📝 Institution data payload:', institutionData);
 
-            if (instError) throw new Error(`Failed to create institution: ${instError.message}`);
-            console.log('Institution record saved successfully.');
+            // Retry logic for network resilience
+            let upsertAttempts = 0;
+            const maxRetries = 3;
+            let lastError: any = null;
+
+            while (upsertAttempts < maxRetries) {
+                try {
+                    upsertAttempts++;
+                    console.log(`Attempt ${upsertAttempts}/${maxRetries} to upsert institution...`);
+
+                    // Create timeout promise (30 seconds)
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Institution creation timed out after 30 seconds. Please check your internet connection.')), 30000)
+                    );
+
+                    // Create upsert promise
+                    const upsertPromise = supabase
+                        .from('institutions')
+                        .upsert([institutionData], { onConflict: 'institution_id' });
+
+                    // Race between timeout and upsert
+                    const { data: upsertData, error: instError } = await Promise.race([
+                        upsertPromise,
+                        timeoutPromise
+                    ]) as any;
+
+                    if (instError) {
+                        lastError = instError;
+                        console.error(`❌ Attempt ${upsertAttempts} failed:`, instError);
+
+                        // Check if it's a network error that we should retry
+                        const isNetworkError = instError.message?.includes('fetch') ||
+                            instError.message?.includes('network') ||
+                            instError.message?.includes('timeout') ||
+                            instError.code === 'PGRST301';
+
+                        if (isNetworkError && upsertAttempts < maxRetries) {
+                            console.log(`⏳ Retrying in 2 seconds... (${maxRetries - upsertAttempts} retries left)`);
+                            toast.loading(`Network error. Retrying (${upsertAttempts}/${maxRetries})...`, { id: loadingToast });
+                            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+                            continue; // Retry
+                        }
+
+                        // If it's not a network error or we've exhausted retries, throw
+                        throw new Error(`Failed to create institution: ${instError.message}`);
+                    }
+
+                    // Success!
+                    console.log('✅ Institution record saved successfully.');
+                    break; // Exit retry loop
+
+                } catch (err: any) {
+                    lastError = err;
+                    console.error(`❌ Attempt ${upsertAttempts} error:`, err);
+
+                    // Check if we should retry
+                    const shouldRetry = (err.message?.includes('fetch') ||
+                        err.message?.includes('network') ||
+                        err.message?.includes('timeout')) &&
+                        upsertAttempts < maxRetries;
+
+                    if (shouldRetry) {
+                        console.log(`⏳ Retrying in 2 seconds... (${maxRetries - upsertAttempts} retries left)`);
+                        toast.loading(`Connection error. Retrying (${upsertAttempts}/${maxRetries})...`, { id: loadingToast });
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        continue; // Retry
+                    }
+
+                    // If we've exhausted retries or it's not a retryable error, throw
+                    throw err;
+                }
+            }
+
+            // If we've exhausted all retries without success
+            if (upsertAttempts >= maxRetries && lastError) {
+                console.error('❌ All retry attempts exhausted. Last error:', lastError);
+                throw new Error(`Failed to create institution after ${maxRetries} attempts: ${lastError.message || 'Unknown error'}`);
+            }
 
             // 2.5 Provision Institution Admin account
             if ((!isEditMode || showAdminCreds) && adminEmail && adminPassword) {
                 toast.loading('Step 2.5/6: Provisioning institution admin...', { id: loadingToast });
-                const { error: adminProvError } = await supabase.functions.invoke('create-user', {
+                console.log('📧 Creating institution admin account:', { email: adminEmail, institution_id: institutionId });
+
+                const { data: edgeFunctionData, error: adminProvError } = await supabase.functions.invoke('create-user', {
                     body: {
                         email: adminEmail,
                         password: adminPassword,
@@ -574,9 +674,46 @@ export function AddInstitution() {
                         staff_id: `ADM-${institutionId}`
                     }
                 });
+
                 if (adminProvError) {
-                    console.error('Failed to provision institution admin:', adminProvError);
+                    console.error('❌ Failed to provision institution admin:', adminProvError);
                     toast.error('Institution created, but admin account provisioning failed. Please create it manually.', { id: loadingToast });
+                } else {
+                    console.log('✅ Institution admin account created successfully');
+
+                    // Verify the profile was created with correct institution_id
+                    const { data: verifyProfile, error: verifyError } = await supabase
+                        .from('profiles')
+                        .select('id, email, role, institution_id')
+                        .eq('email', adminEmail)
+                        .maybeSingle();
+
+                    if (verifyError) {
+                        console.error('⚠️ Could not verify profile creation:', verifyError);
+                    } else if (verifyProfile) {
+                        console.log('✅ Profile verification:', verifyProfile);
+
+                        // Fallback: If institution_id is not set, update it
+                        if (!verifyProfile.institution_id || verifyProfile.institution_id !== institutionId) {
+                            console.warn('⚠️ Profile institution_id mismatch, updating...', {
+                                current: verifyProfile.institution_id,
+                                expected: institutionId
+                            });
+
+                            const { error: updateError } = await supabase
+                                .from('profiles')
+                                .update({ institution_id: institutionId })
+                                .eq('id', verifyProfile.id);
+
+                            if (updateError) {
+                                console.error('❌ Failed to update profile institution_id:', updateError);
+                            } else {
+                                console.log('✅ Profile institution_id updated successfully');
+                            }
+                        }
+                    } else {
+                        console.warn('⚠️ Profile not found after creation, this may cause login issues');
+                    }
                 }
             }
 
@@ -731,17 +868,42 @@ export function AddInstitution() {
             toast.success('Institution onboarding completed successfully!');
             navigate('/admin');
         } catch (error: any) {
-            console.error('Onboarding failed at some step:', error);
+            console.error('❌ Onboarding failed at some step:', error);
+            console.error('Error details:', {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint,
+                stack: error.stack
+            });
             toast.dismiss(loadingToast);
 
             // Handle different error objects (Supabase vs Standard)
             const errorMessage = error.message || error.error_description || error.msg || 'An unknown error occurred';
-            toast.error(`Onboarding Error: ${errorMessage}`);
 
-            // If it failed at Step 1, it might be storage permissions
-            if (errorMessage.toLowerCase().includes('storage') || errorMessage.toLowerCase().includes('bucket')) {
-                toast.error('Storage error detected. Please ensure the "logos" bucket exists and has correct RLS policies.');
+            // Provide specific error messages based on error type
+            if (errorMessage.toLowerCase().includes('fetch') || errorMessage.toLowerCase().includes('network')) {
+                toast.error('Network connection failed. Please check your internet connection and try again.', { duration: 5000 });
+                toast.error('If the problem persists, check if your firewall is blocking Supabase requests.', { duration: 5000 });
+            } else if (errorMessage.toLowerCase().includes('timeout')) {
+                toast.error('Request timed out. Please check your internet speed and try again.', { duration: 5000 });
+            } else if (errorMessage.toLowerCase().includes('storage') || errorMessage.toLowerCase().includes('bucket')) {
+                toast.error('Storage error: Please ensure the "logos" bucket exists and has correct RLS policies.', { duration: 5000 });
+            } else if (errorMessage.toLowerCase().includes('permission') || errorMessage.toLowerCase().includes('policy')) {
+                toast.error('Permission denied: Please check your Supabase RLS policies for the institutions table.', { duration: 5000 });
+            } else if (errorMessage.toLowerCase().includes('duplicate') || errorMessage.toLowerCase().includes('unique')) {
+                toast.error(`Duplicate entry: An institution with code "${institutionId}" already exists.`, { duration: 5000 });
+            } else {
+                toast.error(`Onboarding Error: ${errorMessage}`, { duration: 5000 });
             }
+
+            // Log helpful debugging information
+            console.log('🔍 Debugging information:');
+            console.log('- Institution ID:', institutionId);
+            console.log('- Institution Name:', institutionName);
+            console.log('- Is Edit Mode:', isEditMode);
+            console.log('- Browser Online:', navigator.onLine);
+            console.log('- Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
         } finally {
             setIsSubmitting(false);
         }
