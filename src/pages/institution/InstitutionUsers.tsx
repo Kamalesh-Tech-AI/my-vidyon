@@ -331,13 +331,14 @@ export function InstitutionUsers() {
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">DOB</th>
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Role</th>
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Status</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="[&_tr:last-child]:border-0">
                                         {isStaffLoading ? (
-                                            <tr><td colSpan={6} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
+                                            <tr><td colSpan={7} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
                                         ) : filteredStaff.length === 0 ? (
-                                            <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No staff found.</td></tr>
+                                            <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No staff found.</td></tr>
                                         ) : (
                                             filteredStaff.map((staff: any) => (
                                                 <tr key={staff.id} className="border-b transition-colors hover:bg-muted/50">
@@ -347,6 +348,16 @@ export function InstitutionUsers() {
                                                     <td className="p-4">{staff.date_of_birth ? new Date(staff.date_of_birth).toLocaleDateString() : 'N/A'}</td>
                                                     <td className="p-4"><Badge variant="outline" className="capitalize">{staff.role}</Badge></td>
                                                     <td className="p-4"><Badge className="bg-green-100 text-green-700 hover:bg-green-100/80 border-0">Active</Badge></td>
+                                                    <td className="p-4">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                                                            onClick={() => handleDeleteUser(staff.id, 'staff')}
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}
@@ -373,13 +384,14 @@ export function InstitutionUsers() {
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Email</th>
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Phone</th>
                                             <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Status</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="[&_tr:last-child]:border-0">
                                         {isParentsLoading ? (
-                                            <tr><td colSpan={4} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
+                                            <tr><td colSpan={5} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
                                         ) : filteredParents.length === 0 ? (
-                                            <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No parents found.</td></tr>
+                                            <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">No parents found.</td></tr>
                                         ) : (
                                             filteredParents.map((parent: any) => (
                                                 <tr key={parent.id} className="border-b transition-colors hover:bg-muted/50">
@@ -387,6 +399,16 @@ export function InstitutionUsers() {
                                                     <td className="p-4">{parent.email}</td>
                                                     <td className="p-4">{parent.phone}</td>
                                                     <td className="p-4"><Badge className="bg-green-100 text-green-700 hover:bg-green-100/80 border-0">Active</Badge></td>
+                                                    <td className="p-4">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                                                            onClick={() => handleDeleteUser(parent.id, 'parent')}
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}

@@ -18,23 +18,49 @@ import {
   Shield,
   BarChart3,
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function AdminDashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Filter State
+  const [selectedInstitution, setSelectedInstitution] = useState<string | null>(null);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2025-26');
+
+  // Fetch Institutions for Filter
+  const { data: institutions = [] } = useQuery({
+    queryKey: ['all-institutions'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('institutions')
+        .select('id, institution_id, name')
+        .order('name');
+      return data || [];
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
   // Queries with optimized caching for instant navigation
   const { data: stats = { institutions: 0, users: '0', revenue: '0', health: '99.9%' }, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['admin-stats'],
+    queryKey: ['admin-stats', selectedInstitution, selectedAcademicYear],
     queryFn: async () => {
       // Optimized: Use head: true for count-only queries (faster)
+      let instQuery = supabase.from('institutions').select('id', { count: 'exact', head: true });
+      let userQuery = supabase.from('profiles').select('id', { count: 'exact', head: true });
+
+      // Apply institution filter if selected
+      if (selectedInstitution) {
+        userQuery = userQuery.eq('institution_id', selectedInstitution);
+      }
+
       const [instResult, userResult, subResult] = await Promise.all([
-        supabase.from('institutions').select('id', { count: 'exact', head: true }),
-        supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        instQuery,
+        userQuery,
         supabase.from('subscriptions').select('amount').eq('status', 'active')
       ]);
 
-      const instCount = instResult.count || 0;
+      const instCount = selectedInstitution ? 1 : (instResult.count || 0);
       const userCount = userResult.count || 0;
       const totalRevenue = subResult.data?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
 
@@ -162,10 +188,33 @@ export function AdminDashboard() {
         title="Super Admin Dashboard"
         subtitle="Overview of all institutions and platform metrics"
         actions={
-          <Button className="btn-primary flex items-center gap-2" onClick={() => navigate('/admin/institutions')}>
-            <Building2 className="w-4 h-4" />
-            <span>Manage Institutions</span>
-          </Button>
+          <div className="flex items-center gap-3">
+            <Select value={selectedInstitution || 'all'} onValueChange={(v) => setSelectedInstitution(v === 'all' ? null : v)}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All Institutions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Institutions</SelectItem>
+                {institutions.map((inst: any) => (
+                  <SelectItem key={inst.id} value={inst.id}>{inst.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedAcademicYear} onValueChange={setSelectedAcademicYear}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2025-26">2025-26</SelectItem>
+                <SelectItem value="2024-25">2024-25</SelectItem>
+                <SelectItem value="2023-24">2023-24</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button className="btn-primary flex items-center gap-2" onClick={() => navigate('/admin/institutions')}>
+              <Building2 className="w-4 h-4" />
+              <span>Manage Institutions</span>
+            </Button>
+          </div>
         }
       />
 
