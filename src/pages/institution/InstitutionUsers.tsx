@@ -26,7 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type DialogType = 'student' | 'staff' | 'parent' | null;
+type DialogType = 'student' | 'staff' | 'parent' | 'accountant' | 'canteen' | null;
 
 import { useSearch } from '@/context/SearchContext';
 
@@ -81,7 +81,7 @@ export function InstitutionUsers() {
 
             if (error) throw error;
             // Client-side filtering to avoid 400 errors if enum values don't match
-            const targetRoles = ['faculty', 'admin', 'teacher', 'accountant'];
+            const targetRoles = ['faculty', 'admin', 'teacher', 'accountant', 'canteen_manager'];
             return (data || []).filter((p: any) => targetRoles.includes(p.role));
         },
         enabled: !!user?.institutionId,
@@ -224,6 +224,20 @@ export function InstitutionUsers() {
         s.email.toLowerCase().includes(searchTerm.toLowerCase())
     ), [institutionParents, searchTerm]);
 
+    const filteredAccountants = useMemo(() => institutionStaff.filter((s: any) =>
+        s.role === 'accountant' && (
+            s.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            s.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+    ), [institutionStaff, searchTerm]);
+
+    const filteredCanteenManagers = useMemo(() => institutionStaff.filter((s: any) =>
+        s.role === 'canteen_manager' && (
+            s.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            s.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+    ), [institutionStaff, searchTerm]);
+
     return (
         <InstitutionLayout>
             <PageHeader
@@ -245,10 +259,12 @@ export function InstitutionUsers() {
                 </div>
 
                 <Tabs defaultValue="students" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+                    <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 lg:w-[600px]">
                         <TabsTrigger value="students">Students</TabsTrigger>
                         <TabsTrigger value="staff">Staff</TabsTrigger>
                         <TabsTrigger value="parents">Parents</TabsTrigger>
+                        <TabsTrigger value="accountants">Accountants</TabsTrigger>
+                        <TabsTrigger value="canteen">Canteen</TabsTrigger>
                     </TabsList>
 
                     {/* STUDENTS TAB */}
@@ -418,6 +434,86 @@ export function InstitutionUsers() {
                             </div>
                         </Card>
                     </TabsContent>
+
+                    {/* ACCOUNTANTS TAB */}
+                    <TabsContent value="accountants" className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold">Registered Accountants ({filteredAccountants.length})</h3>
+                            <Button size="sm" onClick={() => setDialogType('accountant')} className="gap-2">
+                                <Plus className="w-4 h-4" /> Add Accountant
+                            </Button>
+                        </div>
+                        <Card className="border">
+                            <div className="relative w-full overflow-auto">
+                                <table className="w-full caption-bottom text-sm text-left">
+                                    <thead className="[&_tr]:border-b bg-muted/40">
+                                        <tr className="border-b transition-colors">
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Name</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Email</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Phone</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="[&_tr:last-child]:border-0">
+                                        {isStaffLoading ? (
+                                            <tr><td colSpan={4} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
+                                        ) : filteredAccountants.length === 0 ? (
+                                            <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No accountants found.</td></tr>
+                                        ) : (
+                                            filteredAccountants.map((acc: any) => (
+                                                <tr key={acc.id} className="border-b transition-colors hover:bg-muted/50">
+                                                    <td className="p-4 font-medium">{acc.full_name}</td>
+                                                    <td className="p-4">{acc.email}</td>
+                                                    <td className="p-4">{acc.phone || 'N/A'}</td>
+                                                    <td className="p-4"><Badge className="bg-green-100 text-green-700 hover:bg-green-100/80 border-0">Active</Badge></td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    </TabsContent>
+
+                    {/* CANTEEN TAB */}
+                    <TabsContent value="canteen" className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold">Registered Canteen Managers ({filteredCanteenManagers.length})</h3>
+                            <Button size="sm" onClick={() => setDialogType('canteen')} className="gap-2">
+                                <Plus className="w-4 h-4" /> Add Canteen Manager
+                            </Button>
+                        </div>
+                        <Card className="border">
+                            <div className="relative w-full overflow-auto">
+                                <table className="w-full caption-bottom text-sm text-left">
+                                    <thead className="[&_tr]:border-b bg-muted/40">
+                                        <tr className="border-b transition-colors">
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Name</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Email</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Phone</th>
+                                            <th className="h-12 px-4 align-middle font-medium text-muted-foreground">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="[&_tr:last-child]:border-0">
+                                        {isStaffLoading ? (
+                                            <tr><td colSpan={4} className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" /></td></tr>
+                                        ) : filteredCanteenManagers.length === 0 ? (
+                                            <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No canteen managers found.</td></tr>
+                                        ) : (
+                                            filteredCanteenManagers.map((cm: any) => (
+                                                <tr key={cm.id} className="border-b transition-colors hover:bg-muted/50">
+                                                    <td className="p-4 font-medium">{cm.full_name}</td>
+                                                    <td className="p-4">{cm.email}</td>
+                                                    <td className="p-4">{cm.phone || 'N/A'}</td>
+                                                    <td className="p-4"><Badge className="bg-green-100 text-green-700 hover:bg-green-100/80 border-0">Active</Badge></td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    </TabsContent>
                 </Tabs>
             </div>
 
@@ -439,6 +535,27 @@ export function InstitutionUsers() {
                     open={true}
                     onOpenChange={(open: boolean) => !open && setDialogType(null)}
                     institutionId={user?.institutionId}
+                    fixedRole="teacher"
+                    onSuccess={() => { }}
+                />
+            )}
+
+            {dialogType === 'accountant' && (
+                <AddStaffDialog
+                    open={true}
+                    onOpenChange={(open: boolean) => !open && setDialogType(null)}
+                    institutionId={user?.institutionId}
+                    fixedRole="accountant"
+                    onSuccess={() => { }}
+                />
+            )}
+
+            {dialogType === 'canteen' && (
+                <AddStaffDialog
+                    open={true}
+                    onOpenChange={(open: boolean) => !open && setDialogType(null)}
+                    institutionId={user?.institutionId}
+                    fixedRole="canteen_manager"
                     onSuccess={() => { }}
                 />
             )}

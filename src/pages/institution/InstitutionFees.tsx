@@ -110,6 +110,18 @@ export function InstitutionFees() {
     const fetchStudents = async () => {
         if (!selectedClass || !selectedSection || !user?.institutionId) return;
         setLoading(true);
+
+        if (user?.id.startsWith('MOCK_')) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+            setStudents([
+                { id: '1', name: 'John Doe', rollNo: '101', avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=JD', fees: { total: 5000, paid: 5000, pending: 0, status: 'Paid' } },
+                { id: '2', name: 'Jane Smith', rollNo: '102', avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=JS', fees: { total: 5000, paid: 2000, pending: 3000, status: 'Pending' } },
+                { id: '3', name: 'Alex Johnson', rollNo: '103', avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=AJ', fees: { total: 5000, paid: 0, pending: 5000, status: 'Due', dueDate: '2026-02-01' } },
+            ]);
+            setLoading(false);
+            return;
+        }
+
         try {
             // 1. Get Class object
             const classObj = allClasses.find(c => c.name === selectedClass && c.section === selectedSection);

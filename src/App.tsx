@@ -111,6 +111,12 @@ import { AdminInstitutions } from "./pages/admin/AdminInstitutions";
 import { AddInstitution } from "./pages/admin/AddInstitution";
 import { InstitutionDetail } from "./pages/admin/InstitutionDetail";
 
+// Accountant Pages
+import { AccountantFees } from "./pages/accountant/AccountantFees";
+
+// Canteen Pages
+import { CanteenDashboard } from "./pages/canteen/CanteenDashboard";
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -215,6 +221,13 @@ const App = () => {
                       <Route path="/institution/reports" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionReports /></ProtectedRoute>} />
                       <Route path="/institution/staff-attendance" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionStaffAttendance /></ProtectedRoute>} />
                       <Route path="/institution/settings" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionSettings /></ProtectedRoute>} />
+
+                      {/* Accountant Routes */}
+                      <Route path="/accountant" element={<ProtectedRoute allowedRoles={['accountant']}><AccountantFees /></ProtectedRoute>} />
+                      <Route path="/accountant/fees" element={<ProtectedRoute allowedRoles={['accountant']}><AccountantFees /></ProtectedRoute>} />
+
+                      {/* Canteen Routes */}
+                      <Route path="/canteen" element={<ProtectedRoute allowedRoles={['canteen_manager']}><CanteenDashboard /></ProtectedRoute>} />
 
                       {/* Parent Routes */}
                       <Route path="/parent" element={<ProtectedRoute allowedRoles={['parent']}><ParentDashboard /></ProtectedRoute>} />

@@ -230,6 +230,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState(prev => ({ ...prev, isLoading: true }));
 
     try {
+      // Mock Login Bypass for Testing
+      const mockLogins: Record<string, { role: UserRole, password: string, name: string }> = {
+        'canteen@gmail.com': { role: 'canteen_manager', password: '123455', name: 'Mock Canteen Manager' },
+        'ape@gmail.com': { role: 'accountant', password: '123456', name: 'Mock Accountant' },
+      };
+
+      const normalizedEmail = credentials.email.trim().toLowerCase();
+      const normalizedPassword = credentials.password.trim();
+
+      console.log('[AUTH] Checking mock for:', { email: normalizedEmail, pass: normalizedPassword });
+
+      if (mockLogins[normalizedEmail] && mockLogins[normalizedEmail].password === normalizedPassword) {
+        console.log('[AUTH] Using mock credentials for:', normalizedEmail);
+        const mockData = mockLogins[normalizedEmail];
+        const mockUser: User = {
+          id: `MOCK_${mockData.role.toUpperCase()}`,
+          email: normalizedEmail,
+          name: mockData.name,
+          role: mockData.role,
+          institutionId: 'MYVID2026', // Use a default test institution ID
+        };
+
+        setState({
+          user: mockUser,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+        toast.success("Logged in with mock account");
+        navigate(ROLE_ROUTES[mockData.role]);
+        return;
+      }
+
       if (!isSupabaseConfigured()) {
         console.log('[AUTH] Using demo mode');
         // Fallback to demo logic for development if Supabase is not configured

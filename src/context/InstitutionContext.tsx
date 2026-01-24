@@ -58,6 +58,37 @@ export function InstitutionProvider({ children }: { children: ReactNode }) {
     const fetchData = useCallback(async () => {
         if (!institutionId) return;
         setLoading(true);
+
+        // Mock Data Bypass
+        if (user?.id.startsWith('MOCK_')) {
+            console.log('[INSTITUTION_CONTEXT] Using mock data');
+            const mockClasses = [
+                { id: 'C1', name: 'LKG', section: 'A' },
+                { id: 'C2', name: 'UKG', section: 'A' },
+                { id: 'C3', name: 'Grade 1', section: 'A' },
+                { id: 'C4', name: 'Grade 2', section: 'A' },
+                { id: 'C5', name: 'Grade 3', section: 'A' },
+                { id: 'C6', name: 'Grade 4', section: 'A' },
+                { id: 'C7', name: 'Grade 5', section: 'A' },
+                { id: 'C8', name: 'Grade 6', section: 'A' },
+                { id: 'C9', name: 'Grade 7', section: 'A' },
+                { id: 'C10', name: 'Grade 8', section: 'A' },
+                { id: 'C11', name: 'Grade 9', section: 'A' },
+                { id: 'C12', name: 'Grade 10', section: 'A' },
+                { id: 'C13', name: 'Grade 11', section: 'A' },
+                { id: 'C14', name: 'Grade 12', section: 'A' },
+            ];
+            setAllClasses(mockClasses);
+            setAllStaffMembers([
+                { id: 'T1', name: 'Mr. Teacher', department: 'Primary' }
+            ]);
+            setAllSubjectsList([
+                { id: 'SB1', name: 'Math', department: 'Science' }
+            ]);
+            setLoading(false);
+            return;
+        }
+
         try {
             // 1. Fetch Subjects
             const { data: subjectsData } = await supabase

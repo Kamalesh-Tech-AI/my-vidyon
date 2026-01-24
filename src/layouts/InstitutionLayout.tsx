@@ -22,6 +22,9 @@ import {
 export function InstitutionLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
 
+  const { user } = useAuth();
+  const role = (user as any)?.user_metadata?.role || user?.role;
+
   const institutionNavItems = [
     { label: t.nav.dashboard, href: '/institution', icon: LayoutDashboard },
     { label: t.nav.departments, href: '/institution/departments', icon: Building2 },
@@ -32,18 +35,14 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: 'Leave Approval', href: '/institution/leave-approval', icon: ClipboardCheck },
     { label: 'Timetable', href: '/institution/timetable', icon: CalendarClock },
 
-    { label: t.nav.feeStructure, href: '/institution/fees', icon: DollarSign },
+    { label: t.nav.feeStructure, href: role === 'accountant' ? '/accountant/fees' : '/institution/fees', icon: DollarSign },
     { label: t.nav.analytics, href: '/institution/analytics', icon: BarChart3 },
     { label: t.nav.reports, href: '/institution/reports', icon: FileText },
     { label: t.nav.settings, href: '/institution/settings', icon: Settings },
   ];
 
-  const { user } = useAuth(); // Import useAuth at the top
-
-  const role = (user as any)?.user_metadata?.role || user?.role;
-
   const filteredNavItems = role === 'accountant'
-    ? institutionNavItems.filter(item => item.href === '/institution/fees')
+    ? institutionNavItems.filter(item => item.href === '/accountant/fees')
     : institutionNavItems;
 
   return (

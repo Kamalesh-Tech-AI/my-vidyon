@@ -427,10 +427,26 @@ function AddStudentDialog({ open, onOpenChange, onSuccess, institutionId }: any)
     );
 }
 
-function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
+function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId, fixedRole }: any) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubjectsOpen, setIsSubjectsOpen] = useState(false);
-    const [data, setData] = useState({ name: '', staffId: '', role: '', email: '', phone: '', dob: '', password: '', department: '', subjects: [] as string[] });
+    const [data, setData] = useState({
+        name: '',
+        staffId: '',
+        role: fixedRole || '',
+        email: '',
+        phone: '',
+        dob: '',
+        password: '',
+        department: '',
+        subjects: [] as string[]
+    });
+
+    useEffect(() => {
+        if (fixedRole) {
+            setData(prev => ({ ...prev, role: fixedRole }));
+        }
+    }, [fixedRole, open]);
     const [image, setImage] = useState<string | null>(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -549,9 +565,9 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
             // Create user account
             toast.loading('Creating account...', { id: toastId });
 
-            console.log('[STAFF] Creating faculty with data:', {
+            console.log('[STAFF] Creating user with data:', {
                 email: data.email,
-                role: 'faculty',
+                role: data.role,
                 full_name: data.name,
                 institution_id: institutionId,
                 staff_id: data.staffId,
@@ -569,7 +585,7 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
                 body: {
                     email: data.email,
                     password: data.password,
-                    role: 'faculty',
+                    role: data.role, // Use the dynamic role from state
                     full_name: data.name,
                     institution_id: institutionId,
                     staff_id: data.staffId,
@@ -679,10 +695,17 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
         }
     };
 
+    const getRoleTitle = () => {
+        if (fixedRole === 'accountant') return 'Add Accountant';
+        if (fixedRole === 'canteen_manager') return 'Add Canteen Manager';
+        if (fixedRole === 'teacher') return 'Add Teacher';
+        return 'Add Staff';
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>Add Staff</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>{getRoleTitle()}</DialogTitle></DialogHeader>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                     {/* Photo Capture Section */}
                     <div className="md:col-span-2 space-y-2">
@@ -734,18 +757,21 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
 
                     <div className="space-y-2"><Label>Name *</Label><Input value={data.name} onChange={e => setData({ ...data, name: e.target.value })} placeholder="e.g. Sarah Smith" /></div>
                     <div className="space-y-2"><Label>Staff ID *</Label><Input value={data.staffId} onChange={e => setData({ ...data, staffId: e.target.value })} placeholder="e.g. STF-2024-005" /></div>
-                    <div className="space-y-2">
-                        <Label>Role</Label>
-                        <Select value={data.role} onValueChange={v => setData({ ...data, role: v })}>
-                            <SelectTrigger><SelectValue placeholder="Select Role" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="teacher">Teacher</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                                <SelectItem value="accountant">Accountant</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    {data.role !== 'accountant' && (
+                    {!fixedRole && (
+                        <div className="space-y-2">
+                            <Label>Role</Label>
+                            <Select value={data.role} onValueChange={v => setData({ ...data, role: v })}>
+                                <SelectTrigger><SelectValue placeholder="Select Role" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="teacher">Teacher</SelectItem>
+                                    <SelectItem value="admin">Admin</SelectItem>
+                                    <SelectItem value="accountant">Accountant</SelectItem>
+                                    <SelectItem value="canteen_manager">Canteen Manager</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+                    {data.role !== 'accountant' && data.role !== 'canteen_manager' && (
                         <div className="space-y-2">
                             <Label>Department</Label>
                             <Select value={data.department} onValueChange={v => setData({ ...data, department: v, subjects: [] })}>
@@ -759,7 +785,7 @@ function AddStaffDialog({ open, onOpenChange, onSuccess, institutionId }: any) {
                         </div>
                     )}
 
-                    {data.role !== 'accountant' && (
+                    {data.role !== 'accountant' && data.role !== 'canteen_manager' && (
                         <div className="space-y-2 md:col-span-2">
                             <Label>Subjects</Label>
                             <div className="relative">

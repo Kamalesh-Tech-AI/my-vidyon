@@ -164,6 +164,19 @@ Deno.serve(async (req) => {
                 console.error("Error creating accountant record:", accountantError);
                 throw new Error(`Failed to create accountant: ${accountantError.message}`);
             }
+        } else if (finalRole === 'canteen_manager') {
+            const { error: canteenError } = await supabaseAdmin
+                .from('staff_details')
+                .upsert({
+                    profile_id: userId,
+                    institution_id: institution_id,
+                    role: 'canteen_manager',
+                    staff_id: staff_id || `CM-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+                });
+            if (canteenError) {
+                console.error("Error creating canteen manager record:", canteenError);
+                throw new Error(`Failed to create canteen manager: ${canteenError.message}`);
+            }
         } else if (finalRole === 'faculty' || finalRole === 'institution' || finalRole === 'admin') {
             const { error: staffError } = await supabaseAdmin
                 .from('staff_details')
