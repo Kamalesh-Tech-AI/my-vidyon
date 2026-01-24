@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 
 export function FacultyAssignments() {
     const navigate = useNavigate();
