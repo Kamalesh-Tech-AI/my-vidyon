@@ -354,8 +354,20 @@ export function CanteenDashboard() {
                                         </div>
 
                                         {isAbsentInMorning && (
-                                            <div className="absolute inset-0 bg-background/5 backdrop-blur-[1px] cursor-not-allowed flex items-center justify-center z-10">
+                                            <div className="absolute inset-0 bg-background/5 backdrop-blur-[1px] cursor-not-allowed flex flex-col items-center justify-center z-10 gap-3">
                                                 <Badge variant="destructive" className="px-4 py-2 scale-110 shadow-lg">NOT ELIGIBLE</Badge>
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    className="rounded-full w-10 h-10 p-0 shadow-lg hover:scale-110 transition-transform cursor-pointer"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleReport(student);
+                                                    }}
+                                                    title="Report Student (Found in canteen while absent)"
+                                                >
+                                                    <XCircle className="w-6 h-6" />
+                                                </Button>
                                             </div>
                                         )}
                                     </Card>
