@@ -612,7 +612,8 @@ export function InstitutionTimetable() {
         setEditingSlot({
             day,
             period,
-            data: existingSlot || {
+            data: {
+                ...(existingSlot || {}),
                 day_of_week: day,
                 period_index: period,
                 start_time: calculatedTimings.start,
@@ -1108,145 +1109,19 @@ export function InstitutionTimetable() {
 
                     {editingSlot && (
                         <div className="space-y-4 py-4">
-                            {/* Timing with AM/PM */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium">Start Time</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <Select
-                                            value={(() => {
-                                                const h = parseInt(editingSlot.data.start_time?.split(':')[0] || '09');
-                                                const converted = h % 12 || 12;
-                                                return String(converted).padStart(2, '0');
-                                            })()}
-                                            onValueChange={(hour) => {
-                                                const [oldHour, minute] = (editingSlot.data.start_time || '09:00').split(':');
-                                                const isPM = parseInt(oldHour) >= 12;
-                                                let newHour = parseInt(hour);
-                                                if (isPM && newHour < 12) newHour += 12;
-                                                if (!isPM && newHour === 12) newHour = 0;
-                                                updateEditingSlot('start_time', `${String(newHour).padStart(2, '0')}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Hour" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {Array.from({ length: 12 }, (_, i) => {
-                                                    const hour = String(i + 1).padStart(2, '0');
-                                                    return <SelectItem key={hour} value={hour}>{hour}</SelectItem>;
-                                                })}
-                                            </SelectContent>
-                                        </Select>
-                                        <Select
-                                            value={editingSlot.data.start_time?.split(':')[1] || '00'}
-                                            onValueChange={(minute) => {
-                                                const [hour, _] = (editingSlot.data.start_time || '09:00').split(':');
-                                                updateEditingSlot('start_time', `${hour}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Min" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {['00', '15', '30', '45'].map((min) => (
-                                                    <SelectItem key={min} value={min}>{min}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <Select
-                                            value={
-                                                parseInt(editingSlot.data.start_time?.split(':')[0] || '09') >= 12 ? 'PM' : 'AM'
-                                            }
-                                            onValueChange={(period) => {
-                                                const [hour, minute] = (editingSlot.data.start_time || '09:00').split(':');
-                                                let newHour = parseInt(hour);
-                                                if (period === 'PM' && newHour < 12) {
-                                                    newHour += 12;
-                                                } else if (period === 'AM' && newHour >= 12) {
-                                                    newHour -= 12;
-                                                }
-                                                updateEditingSlot('start_time', `${String(newHour).padStart(2, '0')}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="AM">AM</SelectItem>
-                                                <SelectItem value="PM">PM</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                            {/* Timing (Read-only) */}
+                            <div className="grid grid-cols-2 gap-4 bg-muted/30 p-3 rounded-lg border">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                        <Clock className="w-3 h-3" /> Start Time
+                                    </label>
+                                    <div className="text-sm font-semibold">{editingSlot.data.start_time}</div>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium">End Time</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <Select
-                                            value={(() => {
-                                                const h = parseInt(editingSlot.data.end_time?.split(':')[0] || '10');
-                                                const converted = h % 12 || 12;
-                                                return String(converted).padStart(2, '0');
-                                            })()}
-                                            onValueChange={(hour) => {
-                                                const [oldHour, minute] = (editingSlot.data.end_time || '10:00').split(':');
-                                                const isPM = parseInt(oldHour) >= 12;
-                                                let newHour = parseInt(hour);
-                                                if (isPM && newHour < 12) newHour += 12;
-                                                if (!isPM && newHour === 12) newHour = 0;
-                                                updateEditingSlot('end_time', `${String(newHour).padStart(2, '0')}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Hour" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {Array.from({ length: 12 }, (_, i) => {
-                                                    const hour = String(i + 1).padStart(2, '0');
-                                                    return <SelectItem key={hour} value={hour}>{hour}</SelectItem>;
-                                                })}
-                                            </SelectContent>
-                                        </Select>
-                                        <Select
-                                            value={editingSlot.data.end_time?.split(':')[1] || '00'}
-                                            onValueChange={(minute) => {
-                                                const [hour, _] = (editingSlot.data.end_time || '10:00').split(':');
-                                                updateEditingSlot('end_time', `${hour}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue placeholder="Min" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {['00', '15', '30', '45'].map((min) => (
-                                                    <SelectItem key={min} value={min}>{min}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <Select
-                                            value={
-                                                parseInt(editingSlot.data.end_time?.split(':')[0] || '10') >= 12 ? 'PM' : 'AM'
-                                            }
-                                            onValueChange={(period) => {
-                                                const [hour, minute] = (editingSlot.data.end_time || '10:00').split(':');
-                                                let newHour = parseInt(hour);
-                                                if (period === 'PM' && newHour < 12) {
-                                                    newHour += 12;
-                                                } else if (period === 'AM' && newHour >= 12) {
-                                                    newHour -= 12;
-                                                }
-                                                updateEditingSlot('end_time', `${String(newHour).padStart(2, '0')}:${minute}`);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-9">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="AM">AM</SelectItem>
-                                                <SelectItem value="PM">PM</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                        <Clock className="w-3 h-3" /> End Time
+                                    </label>
+                                    <div className="text-sm font-semibold">{editingSlot.data.end_time}</div>
                                 </div>
                             </div>
 
