@@ -1,7 +1,4 @@
-import { useState, useEffect } from "react";
 import { SearchProvider } from "@/context/SearchContext";
-
-import VideoIntro from "@/components/common/VideoIntro";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -113,6 +110,7 @@ import { InstitutionDetail } from "./pages/admin/InstitutionDetail";
 
 // Accountant Pages
 import { AccountantFees } from "./pages/accountant/AccountantFees";
+import { AccountantDashboard } from "./pages/accountant/AccountantDashboard";
 
 // Canteen Pages
 import { CanteenDashboard } from "./pages/canteen/CanteenDashboard";
@@ -129,22 +127,6 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
-  const [showVideo, setShowVideo] = useState(true);
-
-
-  const handleVideoComplete = () => {
-    setShowVideo(false);
-  };
-
-
-
-  // Show video intro first
-  if (showVideo) {
-    return <VideoIntro onComplete={handleVideoComplete} />;
-  }
-
-
-
   return (
     <QueryClientProvider client={queryClient}>
       <TranslationProvider>
@@ -203,7 +185,12 @@ const App = () => {
                       <Route path="/faculty/calendar" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyCalendar /></ProtectedRoute>} />
 
                       {/* Institution Routes */}
-                      <Route path="/institution" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionDashboard /></ProtectedRoute>} />
+                      <Route path="/institution" element={<ProtectedRoute allowedRoles={['institution', 'accountant']}><InstitutionDashboard /></ProtectedRoute>} />
+                      {/* Accountant Specific Dashboard Route (optional alias if we want strict separation, but /institution is working as shared. 
+                          However, prompt asked for new page. Let's add it.) 
+                      */}
+                      <Route path="/accountant/dashboard" element={<ProtectedRoute allowedRoles={['accountant']}><AccountantDashboard /></ProtectedRoute>} />
+
                       <Route path="/institution/departments" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionDepartments /></ProtectedRoute>} />
                       <Route path="/institution/courses" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionCourses /></ProtectedRoute>} />
                       {/* <Route path="/institution/faculty" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFaculty /></ProtectedRoute>} /> */}
@@ -218,7 +205,7 @@ const App = () => {
                       <Route path="/institution/fees" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFees /></ProtectedRoute>} />
                       <Route path="/institution/timetable" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionTimetable /></ProtectedRoute>} />
                       <Route path="/institution/timetable/edit/:facultyId" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionTimetableEdit /></ProtectedRoute>} />
-                      <Route path="/institution/analytics" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionAnalytics /></ProtectedRoute>} />
+                      <Route path="/institution/analytics" element={<ProtectedRoute allowedRoles={['institution', 'accountant']}><InstitutionAnalytics /></ProtectedRoute>} />
                       <Route path="/institution/reports" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionReports /></ProtectedRoute>} />
                       <Route path="/institution/staff-attendance" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionStaffAttendance /></ProtectedRoute>} />
                       <Route path="/institution/settings" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionSettings /></ProtectedRoute>} />

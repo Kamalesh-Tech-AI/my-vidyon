@@ -41,9 +41,17 @@ export function InstitutionLayout({ children }: { children: ReactNode }) {
     { label: t.nav.settings, href: '/institution/settings', icon: Settings },
   ];
 
-  const filteredNavItems = role === 'accountant'
-    ? institutionNavItems.filter(item => item.href === '/accountant/fees')
-    : institutionNavItems;
+  // Institution Role Items: Exclude Fees
+  const institutionItems = institutionNavItems.filter(item => item.label !== t.nav.feeStructure);
+
+  // Accountant Role Items: Dashboard, Fees, Analytics
+  const accountantItems = [
+    { label: t.nav.dashboard, href: '/accountant/dashboard', icon: LayoutDashboard },
+    { label: t.nav.feeStructure, href: '/accountant/fees', icon: DollarSign },
+    { label: t.nav.analytics, href: '/institution/analytics', icon: BarChart3 },
+  ];
+
+  const filteredNavItems = role === 'accountant' ? accountantItems : institutionItems;
 
   return (
     <DashboardLayout navItems={filteredNavItems} roleColor="text-institution">
