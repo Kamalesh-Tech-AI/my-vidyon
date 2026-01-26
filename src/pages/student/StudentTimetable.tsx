@@ -396,11 +396,24 @@ export function StudentTimetable() {
         };
     }, [configId, queryClient]);
 
+    const dayMap: { [key: string]: string } = {
+        'Mon': 'Monday',
+        'Tue': 'Tuesday',
+        'Wed': 'Wednesday',
+        'Thu': 'Thursday',
+        'Fri': 'Friday',
+        'Sat': 'Saturday',
+        'Sun': 'Sunday'
+    };
+
+    const normalizeDay = (day: string) => dayMap[day] || day;
+
     // Convert array to object for easier lookup
     const timetableData: { [key: string]: TimetableSlot } = {};
     timetableSlots.forEach((slot: any) => {
-        const key = `${slot.day_of_week}-${slot.period_index}`;
-        timetableData[key] = slot;
+        const normalizedDay = normalizeDay(slot.day_of_week);
+        const key = `${normalizedDay}-${slot.period_index}`;
+        timetableData[key] = { ...slot, day_of_week: normalizedDay };
     });
 
     // Show error state

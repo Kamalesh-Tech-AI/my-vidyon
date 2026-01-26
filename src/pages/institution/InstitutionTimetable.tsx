@@ -33,7 +33,7 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 interface TimetableSlot {
@@ -124,33 +124,78 @@ export function InstitutionTimetable() {
         enabled: !!user?.institutionId,
     });
 
-    // Fetch classes (unique class names only)
+    // Fetch classes (via Groups since institution_id is in groups)
     const { data: classesData = [] } = useQuery({
-        queryKey: ['institution-classes'],
+        queryKey: ['institution-classes', user?.institutionId],
         queryFn: async () => {
+            if (!user?.institutionId) return [];
             const { data, error } = await supabase
-                .from('classes')
-                .select('id, name')
-                .order('name');
+                .from('groups')
+                .select('id, classes(id, name)')
+                .eq('institution_id', user.institutionId);
 
             if (error) {
                 console.error('Error fetching classes:', error);
                 return [];
             }
 
-            console.log('Raw classes data:', data);
-
-            // Get unique classes by name
-            const uniqueClasses = data?.reduce((acc: any[], curr: any) => {
-                if (!acc.find(c => c.name === curr.name)) {
-                    acc.push(curr);
+            // Flatten classes from all groups
+            const allFetchedClasses: any[] = [];
+            data.forEach(g => {
+                if (g.classes) {
+                    (g.classes as any).forEach((c: any) => {
+                        allFetchedClasses.push(c);
+                    });
                 }
-                return acc;
-            }, []) || [];
-
-            console.log('Unique classes:', uniqueClasses);
-            return uniqueClasses;
+            });
+            return allFetchedClasses;
         },
+        enabled: !!user?.institutionId,
+    });
+
+    // Simplified Unique Classes for dropdowns
+    const uniqueClasses = useMemo(() => {
+        const unique: any[] = [];
+        classesData.forEach(c => {
+            if (!unique.find(u => u.name === c.name)) {
+                unique.push(c);
+            }
+        });
+        return unique.sort((a, b) => a.name.localeCompare(b.name));
+    }, [classesData]);
+
+    // Fetch faculty assignments (subjects, classes, sections)
+    const { data: facultyAssignments = [] } = useQuery({
+        queryKey: ['faculty-assignments', selectedFaculty?.id, user?.institutionId],
+        queryFn: async () => {
+            if (!selectedFaculty?.id || !user?.institutionId) return [];
+
+            // Join with subjects to get subject name and class name
+            const { data, error } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    id,
+                    subject_id,
+                    class_id,
+                    section,
+                    faculty_profile_id,
+                    assignment_type,
+                    subjects (
+                        id,
+                        name,
+                        class_name
+                    )
+                `)
+                .eq('faculty_profile_id', selectedFaculty.id)
+                .eq('institution_id', user.institutionId);
+
+            if (error) {
+                console.error('Error fetching faculty assignments:', error);
+                return [];
+            }
+            return data || [];
+        },
+        enabled: !!selectedFaculty?.id && !!user?.institutionId,
     });
 
     // Fetch current config
@@ -199,11 +244,8 @@ export function InstitutionTimetable() {
         queryKey: ['faculty-timetable', selectedFaculty?.id],
         queryFn: async () => {
             if (!selectedFaculty?.id) {
-                console.log('[INSTITUTION] No faculty selected');
                 return [];
             }
-
-            console.log('[INSTITUTION] Fetching timetable for faculty:', selectedFaculty.full_name, selectedFaculty.id);
 
             const { data, error } = await supabase
                 .from('timetable_slots')
@@ -221,8 +263,6 @@ export function InstitutionTimetable() {
                 throw error;
             }
 
-            console.log('[INSTITUTION] Fetched timetable slots:', data);
-            console.log('[INSTITUTION] Number of slots:', data?.length || 0);
             return data || [];
         },
         enabled: !!selectedFaculty?.id,
@@ -291,14 +331,6 @@ export function InstitutionTimetable() {
                 throw new Error('Missing required data');
             }
 
-            console.log('[INSTITUTION] Saving slot:', {
-                day: editingSlot.day,
-                period: editingSlot.period,
-                faculty: selectedFaculty.full_name,
-                faculty_id: selectedFaculty.id,
-                data: editingSlot.data
-            });
-
             // Get or create config
             const { data: existingConfig } = await supabase
                 .from('timetable_configs')
@@ -309,7 +341,6 @@ export function InstitutionTimetable() {
 
             let configId = existingConfig?.id;
             if (!configId) {
-                console.log('[INSTITUTION] Creating new timetable config');
                 const { data: newConfig } = await supabase
                     .from('timetable_configs')
                     .insert({
@@ -324,13 +355,9 @@ export function InstitutionTimetable() {
                     .select('id')
                     .single();
                 configId = newConfig?.id;
-                console.log('[INSTITUTION] Created config:', configId);
-            } else {
-                console.log('[INSTITUTION] Using existing config:', configId);
             }
 
             // Delete existing slot for this day/period
-            console.log('[INSTITUTION] Deleting existing slot...');
             const { error: deleteError } = await supabase
                 .from('timetable_slots')
                 .delete()
@@ -340,8 +367,6 @@ export function InstitutionTimetable() {
 
             if (deleteError) {
                 console.error('[INSTITUTION] Delete error:', deleteError);
-            } else {
-                console.log('[INSTITUTION] Deleted existing slot (if any)');
             }
 
             // Insert new slot if subject is selected
@@ -360,7 +385,6 @@ export function InstitutionTimetable() {
                     is_break: false,
                 };
 
-                console.log('[INSTITUTION] Inserting slot:', slotData);
                 const { data: insertedData, error: insertError } = await supabase
                     .from('timetable_slots')
                     .insert(slotData)
@@ -370,10 +394,7 @@ export function InstitutionTimetable() {
                     console.error('[INSTITUTION] Insert error:', insertError);
                     throw insertError;
                 }
-
-                console.log('[INSTITUTION] Inserted successfully:', insertedData);
             } else {
-                console.log('[INSTITUTION] No subject selected, slot deleted only');
             }
 
             // Send notification to faculty
@@ -392,7 +413,6 @@ export function InstitutionTimetable() {
             }
         },
         onSuccess: () => {
-            console.log('Slot saved successfully, refetching timetable...');
             toast.success('Slot saved successfully');
             // Invalidate and refetch the specific faculty's timetable
             queryClient.invalidateQueries({ queryKey: ['faculty-timetable', selectedFaculty?.id] });
@@ -1146,61 +1166,99 @@ export function InstitutionTimetable() {
                                 </Select>
                             </div>
 
-                            {/* Class and Section */}
-                            {editingSlot.data.subject_id && (
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium">Class</label>
-                                            <Select
-                                                value={editingSlot.data.class_id || 'none'}
-                                                onValueChange={(v) => updateEditingSlot('class_id', v === 'none' ? null : v)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select class" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="none">Select a class</SelectItem>
-                                                    {classesData.map((c: any) => (
-                                                        <SelectItem key={c.id} value={String(c.id)}>
-                                                            {c.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                            {/* Class and Section - Filtered by faculty assignments */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Class</label>
+                                    <Select
+                                        value={editingSlot.data.class_id || 'none'}
+                                        onValueChange={(v) => {
+                                            updateEditingSlot('class_id', v === 'none' ? null : v);
+                                            updateEditingSlot('section', ''); // Reset section when class changes
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select class" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">Select a class</SelectItem>
+                                            {uniqueClasses
+                                                .filter((c: any) => {
+                                                    // If subject is selected, only show classes assigned to faculty for this subject
+                                                    if (editingSlot.data.subject_id) {
+                                                        const sid = editingSlot.data.subject_id;
+                                                        const selectedSubject = subjects.find((s: any) => String(s.id) === String(sid));
+                                                        const sname = selectedSubject?.name;
 
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium">Section</label>
-                                            <Select
-                                                value={editingSlot.data.section || 'none'}
-                                                onValueChange={(v) => updateEditingSlot('section', v === 'none' ? '' : v)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Select section" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="none">Select section</SelectItem>
-                                                    <SelectItem value="A">A</SelectItem>
-                                                    <SelectItem value="B">B</SelectItem>
-                                                    <SelectItem value="C">C</SelectItem>
-                                                    <SelectItem value="D">D</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
+                                                        // Match class assigned to this faculty for this subject
+                                                        return facultyAssignments.some((a: any) => {
+                                                            const isSubjectMatch = String(a.subject_id) === String(sid) || (sname && a.subjects?.name === sname);
+                                                            // Match by class_id OR class_name from subjects table (per user schema)
+                                                            const isClassMatch = String(a.class_id) === String(c.id) || (c.name && a.subjects?.class_name === c.name);
+                                                            return isSubjectMatch && isClassMatch;
+                                                        });
+                                                    }
+                                                    return true; // If no subject, show all classes
+                                                })
+                                                .map((c: any) => (
+                                                    <SelectItem key={c.id} value={String(c.id)}>
+                                                        {c.name}
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
 
-                                    {/* Room Number */}
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium">Room Number</label>
-                                        <Input
-                                            placeholder="e.g., 101"
-                                            value={editingSlot.data.room_number || ''}
-                                            onChange={(e) => updateEditingSlot('room_number', e.target.value)}
-                                        />
-                                    </div>
-                                </>
-                            )}
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Section</label>
+                                    <Select
+                                        value={editingSlot.data.section || 'none'}
+                                        onValueChange={(v) => updateEditingSlot('section', v === 'none' ? '' : v)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select section" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">Select section</SelectItem>
+                                            {(editingSlot.data.class_id && editingSlot.data.subject_id) ? (
+                                                // Filter sections by faculty assignments for this class and subject
+                                                (() => {
+                                                    const sid = editingSlot.data.subject_id;
+                                                    const cid = editingSlot.data.class_id;
+                                                    const selectedSubject = subjects.find((s: any) => String(s.id) === String(sid));
+                                                    const sname = selectedSubject?.name;
+                                                    const selectedClass = uniqueClasses.find((cl: any) => String(cl.id) === String(cid));
+                                                    const cname = selectedClass?.name;
+
+                                                    return facultyAssignments
+                                                        .filter((a: any) => {
+                                                            const isSubjectMatch = String(a.subject_id) === String(sid) || (sname && a.subjects?.name === sname);
+                                                            const isClassMatch = String(a.class_id) === String(cid) || (cname && a.subjects?.class_name === cname);
+                                                            return isSubjectMatch && isClassMatch;
+                                                        })
+                                                        .map((a: any) => (
+                                                            <SelectItem key={String(a.section)} value={String(a.section)}>{String(a.section)}</SelectItem>
+                                                        ));
+                                                })()
+                                            ) : (
+                                                ['A', 'B', 'C', 'D'].map((sec) => (
+                                                    <SelectItem key={sec} value={sec}>{sec}</SelectItem>
+                                                ))
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            {/* Room Number */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Room Number</label>
+                                <Input
+                                    placeholder="e.g., 101"
+                                    value={editingSlot.data.room_number || ''}
+                                    onChange={(e) => updateEditingSlot('room_number', e.target.value)}
+                                />
+                            </div>
                         </div>
                     )}
 

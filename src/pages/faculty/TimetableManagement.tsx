@@ -408,17 +408,31 @@ export function TimetableManagement() {
         enabled: !!staffDetails?.class_assigned && !!user?.institutionId,
     });
 
+    const dayMap: { [key: string]: string } = {
+        'Mon': 'Monday',
+        'Tue': 'Tuesday',
+        'Wed': 'Wednesday',
+        'Thu': 'Thursday',
+        'Fri': 'Friday',
+        'Sat': 'Saturday',
+        'Sun': 'Sunday'
+    };
+
+    const normalizeDay = (day: string) => dayMap[day] || day;
+
     // Convert array to object for easier lookup
     const classTimetableData: { [key: string]: any } = {};
     classTimetable.forEach((slot: any) => {
-        const key = `${slot.day_of_week}-${slot.period_index}`;
-        classTimetableData[key] = slot;
+        const normalizedDay = normalizeDay(slot.day_of_week);
+        const key = `${normalizedDay}-${slot.period_index}`;
+        classTimetableData[key] = { ...slot, day_of_week: normalizedDay };
     });
 
     const myScheduleData: { [key: string]: any } = {};
     mySchedule.forEach((slot: any) => {
-        const key = `${slot.day_of_week}-${slot.period_index}`;
-        myScheduleData[key] = slot;
+        const normalizedDay = normalizeDay(slot.day_of_week);
+        const key = `${normalizedDay}-${slot.period_index}`;
+        myScheduleData[key] = { ...slot, day_of_week: normalizedDay };
     });
 
     // Save class timetable slot
