@@ -24,22 +24,7 @@ import {
   Bell,
 } from 'lucide-react';
 
-// --- MOCK DATA FOR CHARTS (Until we have historical tracking tables) ---
-const enrollmentTrend = [
-  { name: 'Jan', value: 850 },
-  { name: 'Feb', value: 920 },
-  { name: 'Mar', value: 1050 },
-  { name: 'Apr', value: 1180 },
-  { name: 'May', value: 1250 },
-  { name: 'Jun', value: 1320 },
-];
 
-const feeCollection = [
-  { name: 'Jan', value: 1.2 },
-  { name: 'Feb', value: 1.5 },
-  { name: 'Mar', value: 1.8 },
-  { name: 'Apr', value: 2.1 },
-];
 
 export function InstitutionDashboard() {
   const { user } = useAuth();
@@ -80,26 +65,63 @@ export function InstitutionDashboard() {
     }
   }, [role, navigate]);
 
-  // 1. Fetch Stats (Parallel) - Filtered by Academic Year
+  // 1. Fetch Stats & Chart Data (Parallel) - Filtered by Academic Year
   const { data: stats } = useQuery({
     queryKey: ['institution-stats', user?.institutionId, today, selectedAcademicYear],
     queryFn: async () => {
-      if (!user?.institutionId) return { students: 0, teachers: 0, classes: 0, presence: 0 };
+      if (!user?.institutionId) return { students: 0, teachers: 0, classes: 0, presence: 0, enrollmentTrend: [], classDistribution: [] };
 
-      const [studentsReq, teachersReq, classesReq, studentAttendanceReq, staffAttendanceReq] = await Promise.all([
+      const [studentsReq, teachersReq, classesReq, studentAttendanceReq, staffAttendanceReq, studentsDataReq] = await Promise.all([
         supabase.from('students').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('academic_year', selectedAcademicYear),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('role', 'faculty'),
         supabase.from('classes').select('id, groups!inner(institution_id)', { count: 'exact', head: true }).eq('groups.institution_id', user.institutionId).eq('academic_year', selectedAcademicYear),
         supabase.from('student_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('attendance_date', today).eq('academic_year', selectedAcademicYear).in('status', ['present', 'late']),
-        supabase.from('staff_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('attendance_date', today).in('status', ['present', 'late'])
+        supabase.from('staff_attendance').select('id', { count: 'exact', head: true }).eq('institution_id', user.institutionId).eq('attendance_date', today).in('status', ['present', 'late']),
+        // Fetch raw student data for charts
+        supabase.from('students').select('created_at, class_name').eq('institution_id', user.institutionId).eq('academic_year', selectedAcademicYear)
       ]);
+
+      // Process Enrollment Trend (Monthly)
+      const monthlyEnrollment: Record<string, number> = {};
+      const allMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      // Initialize with 0
+      allMonths.forEach(m => monthlyEnrollment[m] = 0);
+
+      studentsDataReq.data?.forEach(s => {
+        const monthIndex = new Date(s.created_at).getMonth();
+        const monthName = allMonths[monthIndex];
+        monthlyEnrollment[monthName]++;
+      });
+
+      // Cumulative OR Per Month? Usually trend is cumulative total. Let's do cumulative.
+      let cumulative = 0;
+      const enrollmentTrend = allMonths.map(name => {
+        cumulative += monthlyEnrollment[name];
+        return { name, value: cumulative };
+      });
+      // OR if we just want new enrollments per month:
+      // const enrollmentTrend = allMonths.map(name => ({ name, value: monthlyEnrollment[name] })); 
+      // Given "Trend", cumulative usually looks better for "Total Students", but "New Admissions" would be bar. 
+      // The mock data looked cumulative (850 -> 920 -> ...). I'll stick to cumulative.
+
+      // Process Class Distribution
+      const classCounts: Record<string, number> = {};
+      studentsDataReq.data?.forEach(s => {
+        const cls = s.class_name || 'Unassigned';
+        classCounts[cls] = (classCounts[cls] || 0) + 1;
+      });
+
+      const classDistribution = Object.keys(classCounts).map(name => ({ name, value: classCounts[name] }));
 
       return {
         students: studentsReq.count || 0,
         teachers: teachersReq.count || 0,
         classes: classesReq.count || 0,
         presence: (studentAttendanceReq.count || 0) + (staffAttendanceReq.count || 0),
-        totalPeople: (studentsReq.count || 0) + (teachersReq.count || 0)
+        totalPeople: (studentsReq.count || 0) + (teachersReq.count || 0),
+        enrollmentTrend,
+        classDistribution
       };
     },
     enabled: !!user?.institutionId,
@@ -211,11 +233,7 @@ export function InstitutionDashboard() {
     enabled: !!user?.institutionId
   });
 
-  const classDistribution = [
-    { name: 'Grade 10', value: 25 },
-    { name: 'Grade 9', value: 28 },
-    { name: 'Grade 8', value: 22 },
-  ];
+
 
   // 4. Realtime Subscription to auto-reload
   useEffect(() => {
@@ -329,13 +347,20 @@ export function InstitutionDashboard() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 sm:mb-8">
         <div className="lg:col-span-2 dashboard-card p-4 sm:p-6">
-          <h3 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Enrollment Trend</h3>
+          <h3 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Enrollment Trend (Cumulative)</h3>
           <div className="chart-container-responsive">
-            <AreaChart data={enrollmentTrend} color="hsl(var(--institution))" height={250} />
+            <AreaChart data={stats?.enrollmentTrend || []} color="hsl(var(--institution))" height={250} />
           </div>
         </div>
         <div className="dashboard-card p-4 sm:p-6">
           <h3 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Class Enrollment Distribution</h3>
+          <div className="chart-container-responsive h-[250px]">
+            {stats?.classDistribution && stats.classDistribution.length > 0 ? (
+              <DonutChart data={stats.classDistribution} />
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data</div>
+            )}
+          </div>
         </div>
       </div>
 

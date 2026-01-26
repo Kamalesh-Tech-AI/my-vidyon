@@ -113,6 +113,7 @@ import { InstitutionDetail } from "./pages/admin/InstitutionDetail";
 
 // Accountant Pages
 import { AccountantFees } from "./pages/accountant/AccountantFees";
+import { AccountantDashboard } from "./pages/accountant/AccountantDashboard";
 
 // Canteen Pages
 import { CanteenDashboard } from "./pages/canteen/CanteenDashboard";
@@ -204,6 +205,11 @@ const App = () => {
 
                       {/* Institution Routes */}
                       <Route path="/institution" element={<ProtectedRoute allowedRoles={['institution', 'accountant']}><InstitutionDashboard /></ProtectedRoute>} />
+                      {/* Accountant Specific Dashboard Route (optional alias if we want strict separation, but /institution is working as shared. 
+                          However, prompt asked for new page. Let's add it.) 
+                      */}
+                      <Route path="/accountant/dashboard" element={<ProtectedRoute allowedRoles={['accountant']}><AccountantDashboard /></ProtectedRoute>} />
+
                       <Route path="/institution/departments" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionDepartments /></ProtectedRoute>} />
                       <Route path="/institution/courses" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionCourses /></ProtectedRoute>} />
                       {/* <Route path="/institution/faculty" element={<ProtectedRoute allowedRoles={['institution']}><InstitutionFaculty /></ProtectedRoute>} /> */}

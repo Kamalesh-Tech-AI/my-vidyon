@@ -163,22 +163,13 @@ export function InstitutionAnalytics() {
                 avg: 80
             }));
 
-            // Fallback data if empty
-            const finalPerformanceData = performanceData.length > 0 ? performanceData : [
-                { month: 'Jan', avg: 78, attendance: 92 },
-                { month: 'Feb', avg: 82, attendance: 94 },
-                { month: 'Mar', avg: 81, attendance: 91 },
-                { month: 'Apr', avg: 85, attendance: 95 },
-                { month: 'May', avg: 88, attendance: 96 },
-            ];
-
             return {
                 totalStudents: studentCount || 0,
                 totalFaculty: facultyCount || 0,
                 totalClasses: classCount || 0,
                 totalRevenue: totalRev,
-                deptChartData: deptChartData.length > 0 ? deptChartData : [{ name: 'General', value: 100 }],
-                performanceData: finalPerformanceData,
+                deptChartData: deptChartData.length > 0 ? deptChartData : [{ name: 'No Data', value: 0 }],
+                performanceData: performanceData,
                 // New Fee Stats
                 feeStats
             };
@@ -223,7 +214,7 @@ export function InstitutionAnalytics() {
             <InstitutionLayout>
                 <PageHeader title="Financial Analytics" subtitle="Overview of fee collection and revenue" />
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
@@ -247,7 +238,7 @@ export function InstitutionAnalytics() {
                             <p className="text-xs text-muted-foreground mt-1">Pending payments</p>
                         </CardContent>
                     </Card>
-                    <Card>
+                    <Card className="sm:col-span-2 lg:col-span-1">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Collection Rate</CardTitle>
                             <TrendingUp className="h-4 w-4 text-primary" />

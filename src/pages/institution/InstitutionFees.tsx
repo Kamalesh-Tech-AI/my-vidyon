@@ -87,11 +87,6 @@ export function InstitutionFees() {
         if (!user?.institutionId) return;
 
         const fetchStats = async () => {
-            if (user.id.startsWith('MOCK_')) {
-                setStats({ revenue: 1250000, outstanding: 45000 });
-                return;
-            }
-
             try {
                 const { data, error } = await supabase
                     .from('student_fees')
@@ -142,71 +137,7 @@ export function InstitutionFees() {
         if (!selectedClass || !selectedSection || !user?.institutionId) return;
         setLoading(true);
 
-        if (user?.id.startsWith('MOCK_')) {
-            await new Promise(resolve => setTimeout(resolve, 800));
-            setStudents([
-                {
-                    id: '1',
-                    name: 'John Doe',
-                    rollNo: '101',
-                    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=JD',
-                    parentName: 'Robert Doe',
-                    contact: '+91 98765 43210',
-                    address: '123 Baker St, London',
-                    fees: {
-                        total: 5000,
-                        paid: 5000,
-                        pending: 0,
-                        status: 'Paid',
-                        structure: [
-                            { category: 'Tuition Fee', amount: 3000, paid: 3000 },
-                            { category: 'Transport Fee', amount: 2000, paid: 2000 }
-                        ]
-                    }
-                },
-                {
-                    id: '2',
-                    name: 'Jane Smith',
-                    rollNo: '102',
-                    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=JS',
-                    parentName: 'Mary Smith',
-                    contact: '+91 91234 56789',
-                    address: '45 Green Park, NY',
-                    fees: {
-                        total: 5000,
-                        paid: 2000,
-                        pending: 3000,
-                        status: 'Pending',
-                        structure: [
-                            { category: 'Tuition Fee', amount: 3000, paid: 2000 },
-                            { category: 'Transport Fee', amount: 2000, paid: 0 }
-                        ]
-                    }
-                },
-                {
-                    id: '3',
-                    name: 'Alex Johnson',
-                    rollNo: '103',
-                    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=AJ',
-                    parentName: 'Peter Johnson',
-                    contact: '+91 99887 76655',
-                    address: '88 Hill Top, CA',
-                    fees: {
-                        total: 5000,
-                        paid: 0,
-                        pending: 5000,
-                        status: 'Due',
-                        dueDate: '2026-02-01',
-                        structure: [
-                            { category: 'Tuition Fee', amount: 3000, paid: 0 },
-                            { category: 'Transport Fee', amount: 2000, paid: 0 }
-                        ]
-                    }
-                },
-            ]);
-            setLoading(false);
-            return;
-        }
+
 
         try {
             // 1. Get Class object
@@ -466,20 +397,25 @@ export function InstitutionFees() {
                     <div className="w-full h-full flex flex-col">
                         <div className="h-16 border-b flex items-center px-6 justify-between bg-card/50">
                             {isSelectionStarted ? (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Button variant="ghost" size="sm" onClick={resetSelection} className="text-primary hover:text-primary/80 -ml-2">
-                                        <ArrowLeft className="w-4 h-4 mr-1" /> Back to Start
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground overflow-x-auto">
+                                    <Button variant="ghost" size="sm" onClick={resetSelection} className="text-primary hover:text-primary/80 -ml-2 whitespace-nowrap">
+                                        <ArrowLeft className="w-4 h-4 mr-1" /> Back
                                     </Button>
                                     <span className="text-border">|</span>
-                                    <span>Selection</span>
-                                    {selectedClass && <>
-                                        <ChevronRight className="w-4 h-4" />
-                                        <span className={cn(!selectedSection && "font-semibold text-foreground")}>{selectedClass}</span>
-                                    </>}
-                                    {selectedSection && <>
-                                        <ChevronRight className="w-4 h-4" />
-                                        <span className="font-semibold text-foreground">Section {selectedSection}</span>
-                                    </>}
+                                    {/* Mobile: Show simpler breadcrumb */}
+                                    <div className="flex items-center">
+                                        {selectedClass && (
+                                            <Button variant="ghost" size="sm" className={cn("px-1 h-auto font-normal", !selectedSection && "font-bold text-foreground")} onClick={() => setSelectedSection(null)}>
+                                                {selectedClass}
+                                            </Button>
+                                        )}
+                                        {selectedSection && (
+                                            <>
+                                                <ChevronRight className="w-3 h-3 mx-1" />
+                                                <span className="font-bold text-foreground">{selectedSection}</span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             ) : (
                                 <h3 className="font-semibold">Quick Selection</h3>
@@ -503,8 +439,12 @@ export function InstitutionFees() {
                                     </Button>
                                 </div>
                             ) : (
-                                <div className="flex h-full divide-x divide-border/50">
-                                    <div className="flex-1 min-w-[250px] max-w-sm flex flex-col bg-card/30 animate-in slide-in-from-left-4 duration-300">
+                                <div className="flex flex-col md:flex-row h-full divide-y md:divide-y-0 md:divide-x divide-border/50">
+                                    {/* Class Selection Column */}
+                                    <div className={cn(
+                                        "flex-1 min-w-[250px] max-w-full md:max-w-sm flex flex-col bg-card/30 animate-in slide-in-from-left-4 duration-300",
+                                        selectedClass ? "hidden md:flex" : "flex"
+                                    )}>
                                         <div className="p-4 bg-muted/20 text-xs font-semibold uppercase tracking-wider text-muted-foreground sticky top-0 backdrop-blur-sm z-10">Select Class</div>
                                         <ScrollArea className="flex-1">
                                             <div className="p-2 space-y-1">
@@ -529,7 +469,11 @@ export function InstitutionFees() {
                                         </ScrollArea>
                                     </div>
 
-                                    <div className="flex-1 min-w-[250px] max-w-sm flex flex-col bg-card/30 relative">
+                                    {/* Section Selection Column */}
+                                    <div className={cn(
+                                        "flex-1 min-w-[250px] max-w-full md:max-w-sm flex flex-col bg-card/30 relative",
+                                        (!selectedClass || selectedSection) ? "hidden md:flex" : "flex"
+                                    )}>
                                         {selectedClass ? (
                                             <div className="absolute inset-0 flex flex-col animate-in fade-in slide-in-from-left-2 duration-300">
                                                 <div className="p-4 bg-muted/20 text-xs font-semibold uppercase tracking-wider text-muted-foreground sticky top-0 backdrop-blur-sm z-10 flex justify-between items-center">
@@ -559,14 +503,18 @@ export function InstitutionFees() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 p-8 text-center">
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 p-8 text-center hidden md:flex">
                                                 <Layers className="w-12 h-12 mb-4 opacity-20" />
                                                 <p>Select a class to view sections</p>
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="flex-[2] flex flex-col bg-muted/10 relative">
+                                    {/* Summary / Action Column */}
+                                    <div className={cn(
+                                        "flex-[2] flex flex-col bg-muted/10 relative",
+                                        !selectedSection ? "hidden md:flex" : "flex"
+                                    )}>
                                         {selectedSection ? (
                                             <div className="absolute inset-0 flex flex-col items-center justify-center p-8 animate-in zoom-in-95 fade-in duration-500 text-center">
                                                 <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mb-6 shadow-inner">
@@ -584,7 +532,7 @@ export function InstitutionFees() {
                                                 </Button>
                                             </div>
                                         ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 p-8 text-center">
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/30 p-8 text-center hidden md:flex">
                                                 <Users className="w-16 h-16 mb-4 opacity-20" />
                                                 <p>{selectedClass ? "Select a section to proceed" : "Start by selecting a class"}</p>
                                             </div>
@@ -900,6 +848,6 @@ export function InstitutionFees() {
                 </DialogContent>
             </Dialog>
 
-        </InstitutionLayout>
+        </InstitutionLayout >
     );
 }
