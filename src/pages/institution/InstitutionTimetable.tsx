@@ -164,7 +164,39 @@ export function InstitutionTimetable() {
                 unique.push(c);
             }
         });
-        return unique.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Custom sort function for educational order
+        const classOrder = ['LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+
+        return unique.sort((a, b) => {
+            // Normalize class names (remove 'st', 'nd', 'rd', 'th' suffixes and extra text)
+            const normalizeClass = (className: string) => {
+                const normalized = className
+                    .toUpperCase()
+                    .replace(/(\d+)(ST|ND|RD|TH)/i, '$1')
+                    .replace(/GRADE\s*/i, '')
+                    .replace(/CLASS\s*/i, '')
+                    .trim();
+                return normalized;
+            };
+
+            const normalizedA = normalizeClass(a.name);
+            const normalizedB = normalizeClass(b.name);
+
+            const indexA = classOrder.indexOf(normalizedA);
+            const indexB = classOrder.indexOf(normalizedB);
+
+            // If both are in the predefined order, sort by their position
+            if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+            }
+            // If only A is in the order, it comes first
+            if (indexA !== -1) return -1;
+            // If only B is in the order, it comes first
+            if (indexB !== -1) return 1;
+            // If neither is in the order, sort alphabetically
+            return a.name.localeCompare(b.name);
+        });
     }, [classesData]);
 
     // Fetch faculty assignments (subjects, classes, sections)

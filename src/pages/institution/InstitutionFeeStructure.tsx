@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/common/Badge';
-import { Plus, Trash2, Save, Send, ChevronRight, School, Loader2, IndianRupee } from 'lucide-react';
+import { Plus, Trash2, Save, Send, ChevronRight, School, Loader2, IndianRupee, Pencil } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -38,13 +38,23 @@ export function InstitutionFeeStructure() {
     const [groups, setGroups] = useState<Group[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Popup State
+    // Main Dialog State
     const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [feeComponents, setFeeComponents] = useState<FeeComponent[]>([{ id: '1', title: 'Tuition Fee', amount: '0' }]);
     const [structureName, setStructureName] = useState('');
     const [dueDate, setDueDate] = useState('');
     const [saving, setSaving] = useState(false);
+    const [feeStructureId, setFeeStructureId] = useState<string | null>(null);
+
+    // Student-wise View State
+    const [showStudentWise, setShowStudentWise] = useState(false);
+    const [studentsInClass, setStudentsInClass] = useState<any[]>([]);
+    const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+    const [isStudentDialogOpen, setIsStudentDialogOpen] = useState(false);
+    const [isEditingStudent, setIsEditingStudent] = useState(false);
+    const [studentFeeComponents, setStudentFeeComponents] = useState<FeeComponent[]>([]);
+    const [studentFeeId, setStudentFeeId] = useState<string | null>(null);
 
     useEffect(() => {
         if (user?.institutionId) {
@@ -52,15 +62,107 @@ export function InstitutionFeeStructure() {
         }
     }, [user?.institutionId]);
 
+    const sortClasses = (classes: ClassItem[]) => {
+        const classOrder = ['LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+
+        return [...classes].sort((a, b) => {
+            const normalizeClass = (className: string) => {
+                return className
+                    .toUpperCase()
+                    .replace(/(\d+)(ST|ND|RD|TH)/i, '$1')
+                    .replace(/GRADE\s*/i, '')
+                    .replace(/CLASS\s*/i, '')
+                    .trim();
+            };
+
+            const normalizedA = normalizeClass(a.name);
+            const normalizedB = normalizeClass(b.name);
+
+            const indexA = classOrder.indexOf(normalizedA);
+            const indexB = classOrder.indexOf(normalizedB);
+
+            if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+            }
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.name.localeCompare(b.name);
+        });
+    };
+
     const fetchClasses = async () => {
         try {
-            const { data, error } = await supabase
-                .from('groups')
-                .select('id, name, classes(id, name, sections)')
+            // Fetch unique classes and sections from students table
+            const { data: studentsData, error: studentsError } = await supabase
+                .from('students')
+                .select('class_name, section')
                 .eq('institution_id', user!.institutionId);
 
-            if (error) throw error;
-            setGroups(data || []);
+            if (studentsError) throw studentsError;
+
+            // Group students by class_name and collect unique sections
+            const classMap = new Map<string, Set<string>>();
+
+            studentsData?.forEach((student) => {
+                if (student.class_name && student.class_name.trim()) {
+                    if (!classMap.has(student.class_name)) {
+                        classMap.set(student.class_name, new Set());
+                    }
+                    if (student.section && student.section.trim()) {
+                        classMap.get(student.class_name)!.add(student.section);
+                    }
+                }
+            });
+
+            // Convert to ClassItem array
+            const allClasses: ClassItem[] = Array.from(classMap.entries()).map(([className, sectionsSet]) => ({
+                id: className, // Using class name as ID since we don't have class table IDs
+                name: className,
+                sections: Array.from(sectionsSet).sort((a, b) => a.localeCompare(b))
+            }));
+
+            // Sort classes in educational order
+            const sortedClasses = sortClasses(allClasses);
+
+            // Group classes into educational levels
+            const groupedClasses: Group[] = [
+                {
+                    id: 'primary',
+                    name: 'Primary School (LKG - 5th)',
+                    classes: sortedClasses.filter(c => {
+                        const normalized = c.name.toUpperCase().replace(/(\d+)(ST|ND|RD|TH)/i, '$1');
+                        return ['LKG', 'UKG', '1', '2', '3', '4', '5'].includes(normalized);
+                    })
+                },
+                {
+                    id: 'middle',
+                    name: 'Middle School (6th - 8th)',
+                    classes: sortedClasses.filter(c => {
+                        const normalized = c.name.toUpperCase().replace(/(\d+)(ST|ND|RD|TH)/i, '$1');
+                        return ['6', '7', '8'].includes(normalized);
+                    })
+                },
+                {
+                    id: 'high',
+                    name: 'High School (9th - 10th)',
+                    classes: sortedClasses.filter(c => {
+                        const normalized = c.name.toUpperCase().replace(/(\d+)(ST|ND|RD|TH)/i, '$1');
+                        return ['9', '10'].includes(normalized);
+                    })
+                },
+                {
+                    id: 'higher_secondary',
+                    name: 'Higher Secondary (11th - 12th)',
+                    classes: sortedClasses.filter(c => {
+                        const normalized = c.name.toUpperCase().replace(/(\d+)(ST|ND|RD|TH)/i, '$1');
+                        return ['11', '12'].includes(normalized);
+                    })
+                }
+            ].filter(group => group.classes.length > 0); // Only include groups with classes
+
+            console.log('Fetched classes from students:', sortedClasses);
+            console.log('Grouped classes:', groupedClasses);
+            setGroups(groupedClasses);
         } catch (error) {
             console.error("Error fetching classes:", error);
             toast.error("Failed to load classes");
@@ -69,50 +171,125 @@ export function InstitutionFeeStructure() {
         }
     };
 
-    const handleClassClick = (cls: ClassItem, groupName: string) => {
+    const handleClassClick = async (cls: ClassItem, groupName: string) => {
         setSelectedClass({ ...cls, groupName });
-        // Reset form or fetch existing structure for this class if exists?
-        // User says "create a new option... in that page it list out the classes when i clicks the class it shows a popup page of fees structure"
-        // Ideally we should fetch if one exists to edit it.
-        // For now, reset to default state for creation.
-        setFeeComponents([{ id: '1', title: 'Tuition Fee', amount: '0' }]);
-        setStructureName(`${cls.name} Fee Structure`);
-        setDueDate('');
+        setShowStudentWise(false);
         setIsDialogOpen(true);
-        fetchExistingStructure(cls.id);
-    };
 
-    const fetchExistingStructure = async (classId: string) => {
-        // Optimistic fetch: try to find the latest fee structure for this class
-        // Note: The schema for fee_structures might link to class_id.
-        // We'll assuming there's a loose link or we create a new one. 
-        // Existing InstitutionFees.tsx logic uses `class_id` column optionally.
+        // Fetch existing fee structure for this class (read-only)
         const { data } = await supabase
             .from('fee_structures')
             .select('*')
             .eq('institution_id', user!.institutionId)
-            // .eq('class_id', classId) // If class_id exists. If not, we might rely on naming convention or add the column.
-            .ilike('name', `%${classId}%`) // Fallback search if class_id column missing
+            .ilike('name', `%${cls.name}%`)
             .limit(1);
 
         if (data && data.length > 0) {
             const fs = data[0];
+            setFeeStructureId(fs.id);
             setStructureName(fs.name);
             setDueDate(fs.due_date ? fs.due_date.split('T')[0] : '');
 
-            // Parse components if stored in description or similar
-            // Assuming we might store it in 'description' as JSON string for now as planned
             try {
                 if (fs.description && fs.description.startsWith('[')) {
-                    const parsed = JSON.parse(fs.description);
-                    if (Array.isArray(parsed)) setFeeComponents(parsed);
+                    setFeeComponents(JSON.parse(fs.description));
                 } else {
-                    // Fallback: If just flat amount
                     setFeeComponents([{ id: '1', title: fs.name, amount: fs.amount.toString() }]);
                 }
             } catch (e) {
                 setFeeComponents([{ id: '1', title: fs.name, amount: fs.amount.toString() }]);
             }
+        } else {
+            // No structure found
+            setFeeStructureId(null);
+            setStructureName(`${cls.name} Fee Structure`);
+            setDueDate('');
+            setFeeComponents([{ id: '1', title: 'No structure defined', amount: '0' }]);
+        }
+
+        // Fetch students in this class
+        const { data: students } = await supabase
+            .from('students')
+            .select('id, name, register_number')
+            .eq('institution_id', user!.institutionId)
+            .eq('class_name', cls.name);
+
+        setStudentsInClass(students || []);
+    };
+
+    const handleViewStudentFee = async (student: any) => {
+        setSelectedStudent(student);
+        setIsEditingStudent(false);
+        setIsStudentDialogOpen(true);
+
+        // Fetch student-specific fee
+        const { data } = await supabase
+            .from('student_fees')
+            .select('*')
+            .eq('student_id', student.id)
+            .eq('fee_structure_id', feeStructureId!)
+            .maybeSingle();
+
+        if (data) {
+            setStudentFeeId(data.id);
+            try {
+                const parsed = JSON.parse(data.description || '[]');
+                setStudentFeeComponents(Array.isArray(parsed) ? parsed : []);
+            } catch (e) {
+                setStudentFeeComponents([{ id: '1', title: 'Fee', amount: data.amount_due.toString() }]);
+            }
+        } else {
+            // No student fee found, use base structure
+            setStudentFeeId(null);
+            setStudentFeeComponents([...feeComponents]);
+        }
+    };
+
+    const handleEditStudentFee = () => {
+        setIsEditingStudent(true);
+    };
+
+    const handleSaveStudentFee = async () => {
+        if (!selectedStudent || !user?.institutionId) return;
+
+        setSaving(true);
+        try {
+            const totalAmount = studentFeeComponents.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+            const componentsJson = JSON.stringify(studentFeeComponents);
+
+            if (studentFeeId) {
+                // Update existing
+                const { error } = await supabase
+                    .from('student_fees')
+                    .update({
+                        amount_due: totalAmount,
+                        description: componentsJson
+                    })
+                    .eq('id', studentFeeId);
+
+                if (error) throw error;
+            } else {
+                // Insert new
+                const { error } = await supabase.from('student_fees').insert([{
+                    student_id: selectedStudent.id,
+                    fee_structure_id: feeStructureId,
+                    institution_id: user.institutionId,
+                    amount_due: totalAmount,
+                    amount_paid: 0,
+                    due_date: dueDate ? new Date(dueDate).toISOString() : null,
+                    status: 'pending',
+                    description: componentsJson
+                }]);
+
+                if (error) throw error;
+            }
+
+            toast.success('Student fee updated successfully');
+            setIsEditingStudent(false);
+        } catch (e: any) {
+            toast.error(e.message);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -272,94 +449,195 @@ export function InstitutionFeeStructure() {
                 )}
             </div>
 
-            {/* Fee Structure Popup */}
+            {/* Class Fee Structure Dialog - Read-Only with Student Toggle */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-6">
+                <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-6">
                     <DialogHeader>
-                        <DialogTitle>Configure Fees: {selectedClass ? getDisplayName(selectedClass, selectedClass.groupName || '') : ''}</DialogTitle>
-                        <DialogDescription>Define the fee breakdown for this class. Saved changes will be applied to all students in this class.</DialogDescription>
+                        <DialogTitle className="flex items-center justify-between">
+                            <span>Fee Structure: {selectedClass ? getDisplayName(selectedClass, selectedClass.groupName || '') : ''}</span>
+                            <div className="flex items-center gap-2">
+                                <Label htmlFor="student-wise-toggle" className="text-sm text-muted-foreground cursor-pointer">Student-wise</Label>
+                                <input
+                                    type="checkbox"
+                                    id="student-wise-toggle"
+                                    className="w-4 h-4 cursor-pointer"
+                                    checked={showStudentWise}
+                                    onChange={(e) => setShowStudentWise(e.target.checked)}
+                                />
+                            </div>
+                        </DialogTitle>
+                        <DialogDescription>
+                            {!showStudentWise && 'View the base fee structure for this class (Read-only)'}
+                            {showStudentWise && 'Click a student to view or edit their specific fees'}
+                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="flex-1 overflow-y-auto pr-2 space-y-6 py-4">
-                        {/* Meta Fields */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>Fee Title</Label>
-                                <Input
-                                    value={structureName}
-                                    onChange={(e) => setStructureName(e.target.value)}
-                                    placeholder="e.g. Annual Fees 2026"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Due Date</Label>
-                                <Input
-                                    type="date"
-                                    value={dueDate}
-                                    onChange={(e) => setDueDate(e.target.value)}
-                                />
-                            </div>
-                        </div>
+                        {!showStudentWise ? (
+                            // Base Structure View (Read-Only)
+                            <>
+                                <div className="grid grid-cols-2 gap-4 opacity-75">
+                                    <div className="space-y-2">
+                                        <Label>Fee Title</Label>
+                                        <Input value={structureName} disabled />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Due Date</Label>
+                                        <Input type="date" value={dueDate} disabled />
+                                    </div>
+                                </div>
 
-                        {/* Dynamic Components */}
+                                <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <Label className="text-base font-semibold">Fee Breakdown</Label>
+                                        <Badge variant="outline">Total: ₹{calculateTotal().toLocaleString()}</Badge>
+                                    </div>
+
+                                    {feeComponents.map((comp) => (
+                                        <div key={comp.id} className="grid grid-cols-12 gap-2 p-2 rounded-md bg-muted/30">
+                                            <div className="col-span-8 space-y-1">
+                                                <Label className="text-xs text-muted-foreground">Title</Label>
+                                                <p className="text-sm font-medium">{comp.title}</p>
+                                            </div>
+                                            <div className="col-span-4 space-y-1 text-right">
+                                                <Label className="text-xs text-muted-foreground">Amount</Label>
+                                                <p className="text-sm font-medium">₹{parseFloat(comp.amount).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <p className="text-xs text-muted-foreground text-center">This is a read-only view. Use the "Create Fee Structure" wizard in Fee Management to modify.</p>
+                            </>
+                        ) : (
+                            // Student List View
+                            <div className="space-y-3">
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    {studentsInClass.length} students in {selectedClass?.name}
+                                </p>
+                                {studentsInClass.map((student) => (
+                                    <div
+                                        key={student.id}
+                                        className="p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors flex justify-between items-center"
+                                        onClick={() => handleViewStudentFee(student)}
+                                    >
+                                        <div>
+                                            <p className="font-medium">{student.name}</p>
+                                            <p className="text-xs text-muted-foreground">{student.register_number}</p>
+                                        </div>
+                                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                    </div>
+                                ))}
+                                {studentsInClass.length === 0 && (
+                                    <p className="text-center text-muted-foreground py-8">No students found in this class</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Student Fee Dialog - View/Edit */}
+            <Dialog open={isStudentDialogOpen} onOpenChange={setIsStudentDialogOpen}>
+                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-6">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center justify-between">
+                            <span>Fee Details: {selectedStudent?.name}</span>
+                            {!isEditingStudent && (
+                                <Button size="sm" variant="outline" onClick={handleEditStudentFee} className="gap-2">
+                                    <Pencil className="w-3.5 h-3.5" /> Edit
+                                </Button>
+                            )}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {isEditingStudent ? 'Modify the fee components' : 'Read-only view of student fees'}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex-1 overflow-y-auto pr-2 space-y-4 py-4">
                         <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
                             <div className="flex justify-between items-center mb-2">
                                 <Label className="text-base font-semibold">Fee Components</Label>
-                                <Badge variant="outline">Total: ₹{calculateTotal().toLocaleString()}</Badge>
+                                <Badge variant="outline">Total: ₹{studentFeeComponents.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0).toLocaleString()}</Badge>
                             </div>
 
-                            {feeComponents.map((comp, index) => (
-                                <div key={comp.id} className="grid grid-cols-12 gap-2 hover:bg-muted/50 p-2 rounded-md items-end">
-                                    <div className="col-span-7 space-y-1">
-                                        <Label className="text-xs text-muted-foreground">Title</Label>
-                                        <Input
-                                            value={comp.title}
-                                            onChange={(e) => updateComponent(comp.id, 'title', e.target.value)}
-                                            placeholder="Component Name"
-                                        />
-                                    </div>
-                                    <div className="col-span-4 space-y-1">
-                                        <Label className="text-xs text-muted-foreground">Amount</Label>
-                                        <Input
-                                            type="number"
-                                            value={comp.amount}
-                                            onChange={(e) => updateComponent(comp.id, 'amount', e.target.value)}
-                                            placeholder="0.00"
-                                        />
-                                    </div>
-                                    <div className="col-span-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="text-destructive hover:bg-destructive/10"
-                                            onClick={() => removeComponent(comp.id)}
-                                            disabled={feeComponents.length === 1}
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                    </div>
+                            {studentFeeComponents.map((comp) => (
+                                <div key={comp.id} className="grid grid-cols-12 gap-2 p-2 rounded-md items-end">
+                                    {isEditingStudent ? (
+                                        <>
+                                            <div className="col-span-7 space-y-1">
+                                                <Label className="text-xs text-muted-foreground">Title</Label>
+                                                <Input
+                                                    value={comp.title}
+                                                    onChange={(e) => setStudentFeeComponents(studentFeeComponents.map(c => c.id === comp.id ? { ...c, title: e.target.value } : c))}
+                                                />
+                                            </div>
+                                            <div className="col-span-4 space-y-1">
+                                                <Label className="text-xs text-muted-foreground">Amount</Label>
+                                                <Input
+                                                    type="number"
+                                                    value={comp.amount}
+                                                    onChange={(e) => setStudentFeeComponents(studentFeeComponents.map(c => c.id === comp.id ? { ...c, amount: e.target.value } : c))}
+                                                />
+                                            </div>
+                                            <div className="col-span-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:bg-destructive/10"
+                                                    onClick={() => setStudentFeeComponents(studentFeeComponents.filter(c => c.id !== comp.id))}
+                                                    disabled={studentFeeComponents.length === 1}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="col-span-8 space-y-1">
+                                                <Label className="text-xs text-muted-foreground">Title</Label>
+                                                <p className="text-sm font-medium">{comp.title}</p>
+                                            </div>
+                                            <div className="col-span-4 space-y-1 text-right">
+                                                <Label className="text-xs text-muted-foreground">Amount</Label>
+                                                <p className="text-sm font-medium">₹{parseFloat(comp.amount).toLocaleString()}</p>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             ))}
 
-                            <div className="pt-2">
-                                <Button onClick={addComponent} variant="outline" size="sm" className="w-full border-dashed">
-                                    <Plus className="w-4 h-4 mr-2" /> Add Component
-                                </Button>
-                            </div>
+                            {isEditingStudent && (
+                                <div className="pt-2">
+                                    <Button
+                                        onClick={() => setStudentFeeComponents([...studentFeeComponents, { id: Date.now().toString(), title: '', amount: '0' }])}
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full border-dashed"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" /> Add Component
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
-                        <div className="flex-1 flex justify-start items-center font-bold text-lg">
-                            Total: ₹{calculateTotal().toLocaleString()}
-                        </div>
-                        <Button variant="outline" onClick={() => handleSendNotification()} className="gap-2 text-primary border-primary/20 hover:bg-primary/5">
-                            <Send className="w-4 h-4" /> Notify Users
-                        </Button>
-                        <Button onClick={handleSave} disabled={saving} className="gap-2 min-w-[100px]">
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            Save
-                        </Button>
+                    <DialogFooter className="gap-2">
+                        {isEditingStudent ? (
+                            <>
+                                <Button variant="outline" onClick={() => setIsEditingStudent(false)}>Cancel</Button>
+                                <Button onClick={handleSaveStudentFee} disabled={saving}>
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                                    Save Changes
+                                </Button>
+                            </>
+                        ) : (
+                            <Button variant="outline" onClick={() => setIsStudentDialogOpen(false)}>Close</Button>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
