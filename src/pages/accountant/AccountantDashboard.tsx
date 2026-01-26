@@ -4,19 +4,24 @@ import { useAuth } from '@/context/AuthContext';
 import { InstitutionLayout } from '@/layouts/InstitutionLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
-import { IndianRupee, TrendingUp, Users, AlertCircle, ArrowUpRight } from 'lucide-react';
+import { IndianRupee, TrendingUp, Users, AlertCircle, ArrowUpRight, Wifi, WifiOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/common/Badge';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b'];
 
 export function AccountantDashboard() {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const [isRealTimeConnected, setIsRealTimeConnected] = useState(true);
+    const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-    const { data: stats, isLoading } = useQuery({
+    const { data: stats, isLoading, refetch } = useQuery({
         queryKey: ['accountant-dashboard-stats', user?.institutionId],
         queryFn: async () => {
             if (!user?.institutionId) return null;
@@ -57,15 +62,115 @@ export function AccountantDashboard() {
             };
         },
         enabled: !!user?.institutionId,
+        refetchInterval: 30000, // Fallback: refetch every 30 seconds
     });
+
+    // Real-time subscription for student_fees changes
+    useEffect(() => {
+        if (!user?.institutionId) return;
+
+        console.log('[REALTIME] Setting up subscriptions for accountant dashboard');
+
+        // Subscribe to student_fees changes
+        const feesChannel = supabase
+            .channel('accountant-fees-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'student_fees',
+                    filter: `institution_id=eq.${user.institutionId}`
+                },
+                (payload) => {
+                    console.log('[REALTIME] Fee change detected:', payload);
+                    setLastUpdate(new Date());
+                    refetch();
+
+                    // Show toast notification
+                    if (payload.eventType === 'INSERT') {
+                        toast.success('New fee record added', {
+                            description: 'Dashboard updated automatically'
+                        });
+                    } else if (payload.eventType === 'UPDATE') {
+                        toast.info('Fee record updated', {
+                            description: 'Dashboard refreshed'
+                        });
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('[REALTIME] Fees subscription status:', status);
+                setIsRealTimeConnected(status === 'SUBSCRIBED');
+            });
+
+        // Subscribe to students changes (for student count)
+        const studentsChannel = supabase
+            .channel('accountant-students-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'students',
+                    filter: `institution_id=eq.${user.institutionId}`
+                },
+                (payload) => {
+                    console.log('[REALTIME] Student change detected:', payload);
+                    setLastUpdate(new Date());
+                    refetch();
+
+                    if (payload.eventType === 'INSERT') {
+                        toast.success('New student enrolled', {
+                            description: 'Dashboard updated'
+                        });
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('[REALTIME] Students subscription status:', status);
+            });
+
+        // Cleanup subscriptions on unmount
+        return () => {
+            console.log('[REALTIME] Cleaning up subscriptions');
+            supabase.removeChannel(feesChannel);
+            supabase.removeChannel(studentsChannel);
+        };
+    }, [user?.institutionId, refetch]);
 
     return (
         <InstitutionLayout>
             <PageHeader
                 title="Accountant Dashboard"
-                subtitle="Financial overview and quick actions"
+                subtitle={
+                    <div className="flex items-center gap-2">
+                        <span>Financial overview and quick actions</span>
+                        <Badge
+                            variant={isRealTimeConnected ? "success" : "warning"}
+                            className="text-xs"
+                        >
+                            {isRealTimeConnected ? (
+                                <>
+                                    <Wifi className="w-3 h-3 mr-1" />
+                                    Live
+                                </>
+                            ) : (
+                                <>
+                                    <WifiOff className="w-3 h-3 mr-1" />
+                                    Offline
+                                </>
+                            )}
+                        </Badge>
+                    </div>
+                }
                 actions={
-                    <Button onClick={() => navigate('/accountant/fees')}>Manage Fees</Button>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground hidden sm:inline">
+                            Updated: {lastUpdate.toLocaleTimeString()}
+                        </span>
+                        <Button onClick={() => navigate('/accountant/fees')}>Manage Fees</Button>
+                    </div>
                 }
             />
 
