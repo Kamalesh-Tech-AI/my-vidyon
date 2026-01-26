@@ -36,6 +36,7 @@ export function StudentTimetable() {
     const queryClient = useQueryClient();
     const [studentInfo, setStudentInfo] = useState<{ class_name: string; section: string; class_id: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Configuration state
     const [configData, setConfigData] = useState({
@@ -410,11 +411,54 @@ export function StudentTimetable() {
 
     // Convert array to object for easier lookup
     const timetableData: { [key: string]: TimetableSlot } = {};
+
+    // 1. Add Regular Slots
     timetableSlots.forEach((slot: any) => {
         const normalizedDay = normalizeDay(slot.day_of_week);
         const key = `${normalizedDay}-${slot.period_index}`;
         timetableData[key] = { ...slot, day_of_week: normalizedDay };
     });
+
+    // 2. Merge Special Slots for Selected Date
+    if (selectedDate && specialSlots.length > 0) {
+        const dateObj = new Date(selectedDate);
+        const dayIndex = dateObj.getDay();
+        const dayMapIdx = dayIndex === 0 ? 6 : dayIndex - 1; // 0=Sun -> 6, 1=Mon -> 0
+        const selectedDayName = DAYS[dayMapIdx]; // e.g., "Monday"
+
+        // Deduplicate special slots just in case
+        const uniqueSpecialSlots = Array.from(new Map(specialSlots.map((s: any) => [`${s.event_date}-${s.start_time}`, s])).values());
+
+        uniqueSpecialSlots.forEach((slot: any) => {
+            // Only merge if slot is for the selected date
+            if (slot.event_date === selectedDate) {
+                // Match period based on time
+                let matchedPeriod = -1;
+                for (let p = 1; p <= configData.periods_per_day; p++) {
+                    const timings = calculatePeriodTimings(p);
+                    const [h, m] = slot.start_time.split(':').map(Number);
+                    const hh = h % 12 || 12;
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const formattedStartTime = `${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+
+                    if (timings.start === formattedStartTime) {
+                        matchedPeriod = p;
+                        break;
+                    }
+                }
+
+                if (matchedPeriod !== -1) {
+                    const key = `${selectedDayName}-${matchedPeriod}`;
+                    timetableData[key] = {
+                        ...slot,
+                        day_of_week: selectedDayName,
+                        period_index: matchedPeriod,
+                        is_special: true // Mark as special
+                    };
+                }
+            }
+        });
+    }
 
     // Show error state
     if (error) {
@@ -451,6 +495,17 @@ export function StudentTimetable() {
             <PageHeader
                 title="My Timetable"
                 subtitle={`${studentInfo.class_name} - Section ${studentInfo.section}`}
+                actions={
+                    <div className="flex items-center gap-2 bg-white rounded-lg border shadow-sm px-3 py-1.5">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        <input
+                            type="date"
+                            className="bg-transparent border-none text-sm focus:ring-0 cursor-pointer"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                        />
+                    </div>
+                }
             />
 
             <Tabs defaultValue="timetable" className="m-4">
@@ -505,8 +560,8 @@ export function StudentTimetable() {
                                                     <Fragment key={period}>
                                                         <td className="border p-2 min-w-[120px] h-20 align-top">
                                                             {slot ? (
-                                                                <div className="space-y-1">
-                                                                    <Badge variant="default" className="w-full justify-start text-[10px] font-bold truncate bg-primary/10 text-primary border-0">
+                                                                <div className={`space-y-1 p-1 rounded-md h-full ${slot.is_special ? 'bg-orange-50 ring-1 ring-orange-200' : ''}`}>
+                                                                    <Badge variant="default" className={`w-full justify-start text-[10px] font-bold truncate border-0 ${slot.is_special ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-primary/10 text-primary'}`}>
                                                                         {slot.subjects?.name}
                                                                     </Badge>
                                                                     <div className="text-[10px] pl-1 font-medium flex items-center gap-1">
@@ -558,36 +613,115 @@ export function StudentTimetable() {
 
                 <TabsContent value="special-classes">
                     <Card>
-                        <CardContent className="p-6">
+                        <CardContent className="p-0 overflow-x-auto">
                             {isLoadingSpecial ? (
                                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
-                            ) : specialSlots.length === 0 ? (
-                                <div className="text-center py-12 text-muted-foreground">
-                                    <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                                    <p>No special classes scheduled for your class.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {specialSlots.map((slot: any) => (
-                                        <div key={slot.id} className="flex items-center justify-between p-4 rounded-xl border bg-orange-50/30 border-orange-100 group hover:border-orange-200 transition-colors">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-xl bg-orange-100 flex flex-col items-center justify-center text-orange-600">
-                                                    <span className="text-[10px] font-bold uppercase">{new Date(slot.event_date).toLocaleString('default', { month: 'short' })}</span>
-                                                    <span className="text-lg font-bold leading-none">{new Date(slot.event_date).getDate()}</span>
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-bold text-lg">{slot.subjects?.name}</h3>
-                                                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                                                        <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {slot.start_time.substring(0, 5)} - {slot.end_time.substring(0, 5)}</span>
-                                                        <span className="flex items-center gap-1"><User className="w-3.5 h-3.5" /> {slot.profiles?.full_name}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <Badge variant="outline" className="bg-white text-orange-600 border-orange-200">Special Class</Badge>
+                            ) : (() => {
+                                // Filter special slots for selected date
+                                const selectedDateSlots = specialSlots.filter((s: any) => s.event_date === selectedDate);
+
+                                if (selectedDateSlots.length === 0) {
+                                    return (
+                                        <div className="text-center py-12 text-muted-foreground">
+                                            <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                                            <p>No special classes scheduled for {new Date(selectedDate).toLocaleDateString()}.</p>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                    );
+                                }
+
+                                // Get day name for selected date
+                                const dateObj = new Date(selectedDate);
+                                const dayIndex = dateObj.getDay();
+                                const dayMapping = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                                const dayName = dayMapping[dayIndex];
+
+                                return (
+                                    <table className="w-full border-collapse">
+                                        <thead>
+                                            <tr>
+                                                <th className="border p-3 bg-muted/50 w-24 text-left font-bold">Day</th>
+                                                {Array.from({ length: configData.periods_per_day }, (_, i) => i + 1).map((p) => {
+                                                    const timings = calculatePeriodTimings(p);
+                                                    return (
+                                                        <Fragment key={p}>
+                                                            <th className="border p-3 bg-muted/50 text-xs font-semibold text-left">
+                                                                <div className="font-bold">Period {p}</div>
+                                                                <div className="text-[10px] font-normal text-muted-foreground mt-0.5 whitespace-nowrap">
+                                                                    {timings.start}
+                                                                </div>
+                                                            </th>
+                                                            {calculateAllTimings()
+                                                                .filter((s, idx, arr) => s.type !== 'period' && idx > 0 && arr[idx - 1].type === 'period' && arr[idx - 1].index === p)
+                                                                .map((b, bi) => (
+                                                                    <th key={bi} className={`border p-3 ${b.type === 'lunch' ? 'bg-orange-50/50 text-orange-600' : 'bg-blue-50/50 text-blue-600'} text-[10px] font-bold text-center uppercase tracking-widest w-16`}>
+                                                                        {b.name}
+                                                                    </th>
+                                                                ))}
+                                                        </Fragment>
+                                                    );
+                                                })}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr className="hover:bg-muted/5 transition-colors">
+                                                <td className="border p-3 font-semibold text-sm bg-muted/10">{dayName}</td>
+                                                {Array.from({ length: configData.periods_per_day }, (_, i) => i + 1).map((period) => {
+                                                    // Find special slot for this period by matching time
+                                                    const timings = calculatePeriodTimings(period);
+                                                    const slot = selectedDateSlots.find((s: any) => {
+                                                        const [h, m] = s.start_time.split(':').map(Number);
+                                                        const hh = h % 12 || 12;
+                                                        const ampm = h >= 12 ? 'PM' : 'AM';
+                                                        const formatted = `${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+                                                        return formatted === timings.start;
+                                                    });
+
+                                                    return (
+                                                        <Fragment key={period}>
+                                                            <td className="border p-2 min-w-[120px] h-20 align-top">
+                                                                {slot ? (
+                                                                    <div className="space-y-1 p-1 rounded-md h-full bg-orange-50 ring-1 ring-orange-200">
+                                                                        <Badge variant="default" className="w-full justify-start text-[10px] font-bold truncate border-0 bg-orange-100 text-orange-700 hover:bg-orange-200">
+                                                                            {slot.subjects?.name}
+                                                                        </Badge>
+                                                                        <div className="text-[10px] pl-1 font-medium flex items-center gap-1">
+                                                                            <User className="w-2.5 h-2.5 opacity-50" />
+                                                                            <span className="truncate">{slot.profiles?.full_name}</span>
+                                                                        </div>
+                                                                        {slot.room_number && (
+                                                                            <div className="text-[9px] text-muted-foreground pl-1">
+                                                                                Rm: {slot.room_number}
+                                                                            </div>
+                                                                        )}
+                                                                        {slot.title && (
+                                                                            <div className="text-[9px] text-orange-600 pl-1 font-semibold">
+                                                                                {slot.title}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/10 text-[10px]">
+                                                                        -
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            {calculateAllTimings()
+                                                                .filter((s, idx, arr) => s.type !== 'period' && idx > 0 && arr[idx - 1].type === 'period' && arr[idx - 1].index === period)
+                                                                .map((b, bi) => (
+                                                                    <td key={bi} className={`border p-2 ${b.type === 'lunch' ? 'bg-orange-50/20' : 'bg-blue-50/20'} align-middle text-center`}>
+                                                                        <div className={`[writing-mode:vertical-lr] rotate-180 text-[10px] font-bold ${b.type === 'lunch' ? 'text-orange-400' : 'text-blue-400'} tracking-[0.2em] uppercase mx-auto`}>
+                                                                            {b.name}
+                                                                        </div>
+                                                                    </td>
+                                                                ))}
+                                                        </Fragment>
+                                                    );
+                                                })}
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                );
+                            })()}
                         </CardContent>
                     </Card>
                 </TabsContent>

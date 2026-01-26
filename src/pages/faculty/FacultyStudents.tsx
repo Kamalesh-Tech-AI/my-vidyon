@@ -23,11 +23,30 @@ export function FacultyStudents() {
         queryFn: async () => {
             if (!user?.id) return null;
             const { data } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    id,
+                    section,
+                    classes:class_id (name)
+                `)
+                .eq('faculty_profile_id', user.id)
+                .eq('assignment_type', 'class_teacher')
+                .maybeSingle();
+
+            if (data) {
+                return {
+                    class_assigned: (data.classes as any)?.name,
+                    section_assigned: data.section
+                };
+            }
+            // Fallback to staff_details if not found in faculty_subjects
+            const { data: staffData } = await supabase
                 .from('staff_details')
                 .select('class_assigned, section_assigned')
                 .eq('profile_id', user.id)
-                .single();
-            return data;
+                .maybeSingle();
+
+            return staffData;
         },
         enabled: !!user?.id
     });
