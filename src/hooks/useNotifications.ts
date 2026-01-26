@@ -75,7 +75,8 @@ export function useNotifications() {
                 rawDate: n.created_at,
                 read: n.read,
                 priority: 'normal',
-                source: 'notification'
+                source: 'notification',
+                actionUrl: n.action_url
             }));
 
             // Transform Academic Events

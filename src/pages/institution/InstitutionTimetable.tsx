@@ -22,7 +22,9 @@ import {
     Plus,
     Filter,
     Trash2,
+    Bell,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/common/Badge';
 import {
     Dialog,
@@ -89,6 +91,7 @@ export function InstitutionTimetable() {
     const [specialClassDate, setSpecialClassDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [selectedClassId, setSelectedClassId] = useState<string>('all');
     const [selectedSection, setSelectedSection] = useState<string>('all');
+    const [specialClassTitle, setSpecialClassTitle] = useState('');
 
     // Fetch all faculty members
     const { data: faculties = [], isLoading: isLoadingFaculty } = useQuery({
@@ -476,6 +479,7 @@ export function InstitutionTimetable() {
                 start_time: editingSlot.data.start_time,
                 end_time: editingSlot.data.end_time,
                 room_number: editingSlot.data.room_number,
+                title: specialClassTitle,
             };
 
             const { data: inserted, error } = await supabase
@@ -485,46 +489,122 @@ export function InstitutionTimetable() {
                 .single();
 
             if (error) throw error;
-
-            // Notify students of this class/section
-            const { data: students } = await supabase
-                .from('students')
-                .select('id, parent_id')
-                .eq('class_name', classesData.find(c => c.id === slotData.class_id)?.name)
-                .eq('section', slotData.section)
-                .eq('institution_id', user.institutionId);
-
-            if (students && students.length > 0) {
-                const notifications = students.flatMap(s => {
-                    const msgs = [{
-                        user_id: s.id,
-                        title: 'Special Class Scheduled',
-                        message: `A special class for ${editingSlot.data.subject_name || 'Subject'} has been scheduled on ${specialClassDate} at ${slotData.start_time}.`,
-                        type: 'timetable',
-                        date: new Date().toISOString(),
-                    }];
-                    if (s.parent_id) {
-                        msgs.push({
-                            user_id: s.parent_id,
-                            title: 'Special Class for your child',
-                            message: `A special class for your child has been scheduled on ${specialClassDate} at ${slotData.start_time}.`,
-                            type: 'timetable',
-                            date: new Date().toISOString(),
-                        });
-                    }
-                    return msgs;
-                });
-
-                await supabase.from('notifications').insert(notifications);
-            }
         },
         onSuccess: () => {
-            toast.success('Special class scheduled and notifications sent');
+            toast.success('Special class saved locally');
             queryClient.invalidateQueries({ queryKey: ['special-slots'] });
             setIsEditDialogOpen(false);
         },
         onError: (error: any) => {
             toast.error(error.message || 'Failed to schedule special class');
+        }
+    });
+
+    // Batch send notifications mutation
+    const sendBatchNotificationMutation = useMutation({
+        mutationFn: async () => {
+            if (!selectedFaculty?.id || !user?.institutionId || !specialClassDate) {
+                throw new Error('Please select a faculty and date first');
+            }
+
+            // 1. Fetch current special slots for this faculty and date
+            const { data: slots, error: slotsError } = await supabase
+                .from('special_timetable_slots')
+                .select(`
+                    id, 
+                    class_id, 
+                    section, 
+                    subject_id,
+                    subjects (name)
+                `)
+                .eq('faculty_id', selectedFaculty.id)
+                .eq('event_date', specialClassDate)
+                .eq('institution_id', user.institutionId);
+
+            if (slotsError) throw slotsError;
+            if (!slots || slots.length === 0) {
+                throw new Error('No special slots found for the selected faculty and date');
+            }
+
+            const notifications: any[] = [];
+            const timestamp = new Date().toISOString();
+
+            // 1. Notify Faculty (Redirection enabled)
+            notifications.push({
+                user_id: selectedFaculty.id,
+                institution_id: user.institutionId,
+                title: specialClassTitle || 'Special Class Scheduled',
+                message: `You have a special class schedule for ${specialClassDate}. ${specialClassTitle ? `Reason: ${specialClassTitle}` : ''}`,
+                type: 'timetable',
+                date: timestamp,
+                read: false,
+                action_url: `/faculty/timetable?date=${specialClassDate}`
+            });
+
+            // 2. Notify Students and Parents
+            // Collect unique class+sections
+            const classSections = new Map<string, string>(); // class_id -> name (we need name for student lookup)
+            const uniqueCombos = new Set<string>(); // "class_id|section"
+
+            slots.forEach(s => {
+                uniqueCombos.add(`${s.class_id}|${s.section}`);
+            });
+
+            for (const combo of uniqueCombos) {
+                const [cid, sec] = combo.split('|');
+                const className = classesData.find(c => String(c.id) === String(cid))?.name;
+
+                if (!className) continue;
+
+                const { data: students } = await supabase
+                    .from('students')
+                    .select('id, parent_id')
+                    .eq('class_name', className)
+                    .eq('section', sec)
+                    .eq('institution_id', user.institutionId);
+
+                if (students && students.length > 0) {
+                    students.forEach(s => {
+                        // Student Notification (Redirection enabled)
+                        notifications.push({
+                            user_id: s.id,
+                            institution_id: user.institutionId,
+                            title: specialClassTitle || 'Special Class Added',
+                            message: `A special class has been added to your timetable for ${specialClassDate}.`,
+                            type: 'timetable',
+                            date: timestamp,
+                            read: false,
+                            action_url: `/student/timetable?date=${specialClassDate}`
+                        });
+
+                        // Parent Notification (NO Redirection)
+                        if (s.parent_id) {
+                            notifications.push({
+                                user_id: s.parent_id,
+                                institution_id: user.institutionId,
+                                title: `Special Class for your child`,
+                                message: `A special class has been added to the timetable for your child in ${className} - ${sec} on ${specialClassDate}.${specialClassTitle ? ` Reason: ${specialClassTitle}` : ''}`,
+                                type: 'timetable',
+                                date: timestamp,
+                                read: false
+                                // NO action_url as per user request
+                            });
+                        }
+                    });
+                }
+            }
+
+            if (notifications.length > 0) {
+                const { error: notifyError } = await supabase.from('notifications').insert(notifications);
+                if (notifyError) throw notifyError;
+            }
+        },
+        onSuccess: () => {
+            toast.success('Batch notifications sent successfully to faculty, students and parents');
+        },
+        onError: (error: any) => {
+            console.error('Batch notification error:', error);
+            toast.error(error.message || 'Failed to send batch notifications');
         }
     });
 
@@ -644,10 +724,12 @@ export function InstitutionTimetable() {
     };
 
     const updateEditingSlot = (field: string, value: any) => {
-        if (!editingSlot) return;
-        setEditingSlot({
-            ...editingSlot,
-            data: { ...editingSlot.data, [field]: value },
+        setEditingSlot(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                data: { ...prev.data, [field]: value },
+            };
         });
     };
 
@@ -673,7 +755,7 @@ export function InstitutionTimetable() {
                 subtitle="View and manage weekly schedules for faculty members"
                 actions={
                     <div className="flex items-center gap-3">
-                        {isSpecialMode && (
+                        {isSpecialMode && !selectedFaculty && (
                             <div className="flex items-center gap-2 mr-4 bg-muted/50 p-1.5 rounded-lg border shadow-sm">
                                 <div className="flex items-center gap-1.5 px-2 border-r pr-3">
                                     <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
@@ -690,7 +772,7 @@ export function InstitutionTimetable() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">All Classes</SelectItem>
-                                        {classesData.map((c: any) => (
+                                        {uniqueClasses.map((c: any) => (
                                             <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -706,6 +788,39 @@ export function InstitutionTimetable() {
                                         <SelectItem value="C">C</SelectItem>
                                     </SelectContent>
                                 </Select>
+                            </div>
+                        )}
+                        {/* Always show date picker in special mode when faculty is selected, but not class filters */}
+                        {isSpecialMode && selectedFaculty && (
+                            <div className="flex items-center gap-1.5 px-3 h-9 bg-muted/50 rounded-lg border shadow-sm mr-2">
+                                <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                                <Input
+                                    type="date"
+                                    className="w-[130px] h-7 text-[11px] bg-transparent border-none focus-visible:ring-0 p-0"
+                                    value={specialClassDate}
+                                    onChange={(e) => setSpecialClassDate(e.target.value)}
+                                />
+                            </div>
+                        )}
+                        {isSpecialMode && selectedFaculty && (
+                            <div className="flex items-center gap-2">
+                                <div className="relative group">
+                                    <Input
+                                        placeholder="Reason for special class (e.g. Annual Day)"
+                                        className="h-8 w-[180px] text-[10px] transition-all focus:w-[220px]"
+                                        value={specialClassTitle}
+                                        onChange={(e) => setSpecialClassTitle(e.target.value)}
+                                    />
+                                </div>
+                                <Button
+                                    onClick={() => sendBatchNotificationMutation.mutate()}
+                                    disabled={sendBatchNotificationMutation.isPending}
+                                    variant="secondary"
+                                    className="h-8 text-[10px] font-bold gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 shadow-sm"
+                                >
+                                    <Bell className={cn("w-3.5 h-3.5", sendBatchNotificationMutation.isPending && "animate-pulse")} />
+                                    {sendBatchNotificationMutation.isPending ? "Sending..." : "Send Notification"}
+                                </Button>
                             </div>
                         )}
                         <Button
@@ -859,7 +974,14 @@ export function InstitutionTimetable() {
                                                                             {slot.start_time.substring(0, 5)} - {slot.end_time.substring(0, 5)}
                                                                         </div>
                                                                         {isSpecialMode && (
-                                                                            <Badge variant="outline" className="mt-1 text-[8px] h-4 bg-orange-50 text-orange-600 border-orange-200">SPECIAL</Badge>
+                                                                            <div className="flex flex-col gap-1 mt-1">
+                                                                                <Badge variant="outline" className="text-[8px] h-4 bg-orange-50 text-orange-600 border-orange-200">SPECIAL</Badge>
+                                                                                {slot.title && (
+                                                                                    <div className="text-[9px] italic text-orange-700 font-medium truncate px-1">
+                                                                                        {slot.title}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
                                                                         )}
                                                                     </div>
                                                                 ) : (

@@ -30,6 +30,7 @@ interface Notification {
     read: boolean;
     table?: string;
     eventType?: string;
+    actionUrl?: string;
 }
 
 export function RealtimeNotificationBell() {
@@ -314,6 +315,7 @@ export function RealtimeNotificationBell() {
                     read: false,
                     table: 'notifications',
                     eventType: 'INSERT',
+                    actionUrl: payload.new.action_url,
                 };
 
                 setNotifications(prev => [notification, ...prev].slice(0, 20));
@@ -333,6 +335,11 @@ export function RealtimeNotificationBell() {
 
     const handleNotificationClick = (notification: Notification) => {
         markAsRead(notification.id);
+
+        if (notification.actionUrl) {
+            navigate(notification.actionUrl);
+            return;
+        }
 
         // Navigation logic based on notification type/table
         if (notification.table === 'staff_leaves') {

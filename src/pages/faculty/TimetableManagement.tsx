@@ -288,38 +288,52 @@ export function TimetableManagement() {
         enabled: !!user?.id,
     });
 
-    // Fetch faculty's class assignment (optional - not required for timetable to work)
-    const { data: staffDetails } = useQuery({
-        queryKey: ['faculty-assignment', user?.id],
+    // Fetch faculty's class assignment (Using faculty_subjects with assignment_type = 'class_teacher')
+    const { data: classTeacherAssignment, isLoading: isLoadingAssignment } = useQuery({
+        queryKey: ['faculty-class-assignment', user?.id],
         queryFn: async () => {
             if (!user?.id) return null;
 
             const { data, error } = await supabase
-                .from('staff_details')
-                .select('*')
-                .eq('profile_id', user.id)
+                .from('faculty_subjects')
+                .select(`
+                    id,
+                    section,
+                    classes:class_id (id, name)
+                `)
+                .eq('faculty_profile_id', user.id)
+                .eq('assignment_type', 'class_teacher')
                 .maybeSingle();
 
             if (error) {
-                console.log('Staff details not found (optional):', error);
+                console.error('Error fetching class teacher assignment:', error);
                 return null;
             }
-            return data;
+
+            if (data) {
+                return {
+                    class_assigned: (data.classes as any)?.name,
+                    section_assigned: data.section,
+                    class_id: (data.classes as any)?.id
+                };
+            }
+            return null;
         },
         enabled: !!user?.id,
-        retry: false,
     });
+
+    const isClassTeacher = !!classTeacherAssignment;
 
     // Fetch class details (optional)
     const { data: classDetails } = useQuery({
-        queryKey: ['class-details', staffDetails?.class_assigned],
+        queryKey: ['class-details', classTeacherAssignment?.class_assigned],
         queryFn: async () => {
-            if (!staffDetails?.class_assigned) return null;
+            if (!classTeacherAssignment?.class_assigned) return null;
 
             const { data, error } = await supabase
                 .from('classes')
                 .select('id, name')
-                .eq('name', staffDetails.class_assigned)
+                .eq('name', classTeacherAssignment.class_assigned)
                 .maybeSingle();
 
             if (error) {
@@ -328,7 +342,7 @@ export function TimetableManagement() {
             }
             return data;
         },
-        enabled: !!staffDetails?.class_assigned,
+        enabled: !!classTeacherAssignment?.class_assigned,
         retry: false,
     });
 
@@ -367,23 +381,11 @@ export function TimetableManagement() {
         enabled: !!user?.institutionId,
     });
 
-    // Fetch class timetable (for editing)
+    // Fetch class timetable (for editing) - only for class teachers
     const { data: classTimetable = [], isLoading: isLoadingClassTimetable } = useQuery({
-        queryKey: ['class-timetable', staffDetails?.class_assigned, staffDetails?.section_assigned],
+        queryKey: ['class-timetable', classTeacherAssignment?.class_assigned, classTeacherAssignment?.section_assigned],
         queryFn: async () => {
-            if (!staffDetails?.class_assigned || !user?.institutionId) return [];
-
-            console.log(`Fetching class timetable for ${staffDetails.class_assigned} ${staffDetails.section_assigned}...`);
-
-            // Get the class_id
-            const { data: targetClass } = await supabase
-                .from('classes')
-                .select('id')
-                .eq('name', staffDetails.class_assigned)
-                .limit(1)
-                .single();
-
-            if (!targetClass) return [];
+            if (!classTeacherAssignment?.class_assigned || !classTeacherAssignment?.class_id || !user?.institutionId) return [];
 
             // Get all slots for this class and section
             const { data, error } = await supabase
@@ -393,8 +395,8 @@ export function TimetableManagement() {
                     subjects:subject_id (name),
                     profiles:faculty_id (full_name)
                 `)
-                .eq('class_id', targetClass.id)
-                .eq('section', staffDetails.section_assigned)
+                .eq('class_id', classTeacherAssignment.class_id)
+                .eq('section', classTeacherAssignment.section_assigned)
                 .order('day_of_week')
                 .order('period_index');
 
@@ -405,7 +407,7 @@ export function TimetableManagement() {
 
             return data || [];
         },
-        enabled: !!staffDetails?.class_assigned && !!user?.institutionId,
+        enabled: isClassTeacher && !!user?.institutionId,
     });
 
     const dayMap: { [key: string]: string } = {
@@ -444,28 +446,26 @@ export function TimetableManagement() {
 
             console.log('Saving slot:', editingSlot);
 
-            // Get the class assigned to this faculty
-            const { data: staff } = await supabase
-                .from('staff_details')
-                .select('class_assigned, section_assigned')
-                .eq('profile_id', user.id)
+            // Get the class assigned to this faculty (Using faculty_subjects)
+            const { data: assignment } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    section,
+                    classes:class_id (id, name)
+                `)
+                .eq('faculty_profile_id', user.id)
+                .eq('assignment_type', 'class_teacher')
                 .maybeSingle();
 
-            if (!staff?.class_assigned) {
+            if (!assignment || !(assignment.classes as any)?.id) {
                 throw new Error('You are not assigned as a class teacher. Please contact admin.');
             }
 
-            // Get the class_id
-            const { data: targetClass } = await supabase
-                .from('classes')
-                .select('id')
-                .eq('name', staff.class_assigned)
-                .limit(1)
-                .single();
+            const targetClassId = (assignment.classes as any).id;
+            const targetClassName = (assignment.classes as any).name;
+            const section = assignment.section;
 
-            if (!targetClass) {
-                throw new Error(`Class ${staff.class_assigned} not found in database`);
-            }
+            // targetClassId and targetClassName already derived from assignment
 
             // Get or create config
             let configId = currentConfig?.id;
@@ -487,8 +487,8 @@ export function TimetableManagement() {
             await supabase
                 .from('timetable_slots')
                 .delete()
-                .eq('class_id', targetClass.id)
-                .eq('section', staff.section_assigned)
+                .eq('class_id', targetClassId)
+                .eq('section', section)
                 .eq('day_of_week', editingSlot.day)
                 .eq('period_index', editingSlot.period);
 
@@ -500,8 +500,8 @@ export function TimetableManagement() {
                 const slotData = {
                     config_id: configId,
                     faculty_id: editingSlot.data.assigned_faculty_id || user.id,
-                    class_id: targetClass.id,
-                    section: staff.section_assigned,
+                    class_id: targetClassId,
+                    section: section,
                     day_of_week: editingSlot.day,
                     period_index: editingSlot.period,
                     subject_id: parseInt(editingSlot.data.subject_id),
@@ -536,28 +536,28 @@ export function TimetableManagement() {
             if (!editingSlot || !user?.institutionId || !isSpecialMode) throw new Error('Missing data');
 
             // Get the class assigned to this faculty
-            const { data: staff } = await supabase
-                .from('staff_details')
-                .select('class_assigned, section_assigned')
-                .eq('profile_id', user.id)
+            const { data: assignment } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    section,
+                    classes:class_id (id, name)
+                `)
+                .eq('faculty_profile_id', user.id)
+                .eq('assignment_type', 'class_teacher')
                 .maybeSingle();
 
-            if (!staff?.class_assigned) {
+            if (!assignment || !(assignment.classes as any)?.id) {
                 throw new Error('You are not assigned as a class teacher.');
             }
 
-            // Get the class_id
-            const { data: targetClass } = await supabase
-                .from('classes')
-                .select('id')
-                .eq('name', staff.class_assigned)
-                .limit(1)
-                .single();
+            const targetClassId = (assignment.classes as any).id;
+            const targetClassName = (assignment.classes as any).name;
+            const section = assignment.section;
 
             const slotData = {
                 institution_id: user.institutionId,
-                class_id: targetClass.id,
-                section: staff.section_assigned,
+                class_id: targetClassId,
+                section: section,
                 event_date: specialClassDate,
                 subject_id: editingSlot.data.subject_id,
                 faculty_id: editingSlot.data.assigned_faculty_id || user.id,
@@ -576,8 +576,8 @@ export function TimetableManagement() {
             const { data: students } = await supabase
                 .from('students')
                 .select('id, parent_id')
-                .eq('class_name', staff.class_assigned)
-                .eq('section', staff.section_assigned)
+                .eq('class_name', targetClassName)
+                .eq('section', section)
                 .eq('institution_id', user.institutionId);
 
             if (students && students.length > 0) {
@@ -620,26 +620,23 @@ export function TimetableManagement() {
         mutationFn: async ({ day, period }: { day: string; period: number }) => {
             if (!user?.id) throw new Error('User not found');
 
-            const { data: staff } = await supabase
-                .from('staff_details')
-                .select('class_assigned, section_assigned')
-                .eq('profile_id', user.id)
+            const { data: assignment } = await supabase
+                .from('faculty_subjects')
+                .select(`
+                    section,
+                    classes:class_id (id)
+                `)
+                .eq('faculty_profile_id', user.id)
+                .eq('assignment_type', 'class_teacher')
                 .maybeSingle();
 
-            if (!staff?.class_assigned) throw new Error('Not class teacher');
-
-            const { data: targetClass } = await supabase
-                .from('classes')
-                .select('id')
-                .eq('name', staff.class_assigned)
-                .limit(1)
-                .single();
+            if (!assignment || !(assignment.classes as any)?.id) throw new Error('Not class teacher');
 
             const { error } = await supabase
                 .from('timetable_slots')
                 .delete()
-                .eq('class_id', targetClass.id)
-                .eq('section', staff.section_assigned)
+                .eq('class_id', (assignment.classes as any).id)
+                .eq('section', assignment.section)
                 .eq('day_of_week', day)
                 .eq('period_index', period);
 
@@ -716,7 +713,7 @@ export function TimetableManagement() {
         });
     };
 
-    const isLoading = isLoadingSchedule || isLoadingClassTimetable;
+    const isLoading = isLoadingSchedule || isLoadingClassTimetable || isLoadingAssignment;
 
     if (isLoading) {
         return (
@@ -724,6 +721,33 @@ export function TimetableManagement() {
                 <div className="flex h-[400px] items-center justify-center">
                     <Loader fullScreen={false} />
                 </div>
+            </FacultyLayout>
+        );
+    }
+
+    if (!isClassTeacher) {
+        return (
+            <FacultyLayout>
+                <PageHeader
+                    title="Timetable Management"
+                    subtitle="View your schedule and manage your assigned class timetable"
+                />
+                <Card className="mt-6">
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="bg-destructive/10 p-4 rounded-full mb-4">
+                            <Calendar className="w-12 h-12 text-destructive opacity-50" />
+                        </div>
+                        <h3 className="text-lg font-bold">Access Restricted</h3>
+                        <p className="text-muted-foreground max-w-sm mt-2">
+                            Only faculty members assigned as <strong>Class Teachers</strong> can access the timetable management page.
+                            Please contact your administrator if you believe this is an error.
+                        </p>
+                        <Button variant="outline" className="mt-6" onClick={() => window.history.back()}>
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Go Back
+                        </Button>
+                    </CardContent>
+                </Card>
             </FacultyLayout>
         );
     }
@@ -742,7 +766,7 @@ export function TimetableManagement() {
                     <TabsList className="grid w-full max-w-md grid-cols-3">
                         <TabsTrigger value="my-schedule">My Schedule</TabsTrigger>
                         <TabsTrigger value="class-timetable">
-                            {staffDetails?.class_assigned ? `${staffDetails.class_assigned}${staffDetails.section_assigned ? ` - ${staffDetails.section_assigned}` : ''}` : 'Class Timetable'}
+                            {classTeacherAssignment?.class_assigned ? `${classTeacherAssignment.class_assigned}${classTeacherAssignment.section_assigned ? ` - ${classTeacherAssignment.section_assigned}` : ''}` : 'Class Timetable'}
                         </TabsTrigger>
                         <TabsTrigger value="exam-schedule">Exams</TabsTrigger>
                     </TabsList>
@@ -854,7 +878,7 @@ export function TimetableManagement() {
                                 <div className="p-4 bg-muted/30 border-b flex flex-col md:flex-row md:items-center justify-between gap-4">
                                     <div className="flex items-center gap-2">
                                         <Badge className="bg-primary/10 text-primary border-primary/20">
-                                            {staffDetails?.class_assigned || 'Class'} {staffDetails?.section_assigned || ''}
+                                            {classTeacherAssignment?.class_assigned || 'Class'} {classTeacherAssignment?.section_assigned || ''}
                                         </Badge>
                                         <p className="text-sm text-muted-foreground">
                                             Manage weekly schedule and schedule special classes
@@ -1023,8 +1047,8 @@ export function TimetableManagement() {
                     <TabsContent value="exam-schedule" className="mt-4">
                         <ExamScheduleManager
                             classId={classDetails?.id}
-                            className={staffDetails?.class_assigned}
-                            section={staffDetails?.section_assigned}
+                            className={classTeacherAssignment?.class_assigned}
+                            section={classTeacherAssignment?.section_assigned}
                         />
                     </TabsContent>
                 </Tabs>

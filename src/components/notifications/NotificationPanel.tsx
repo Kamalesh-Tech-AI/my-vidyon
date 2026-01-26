@@ -10,8 +10,11 @@ import {
     Info,
     XCircle,
     Bell,
-    Loader2
+    Loader2,
+    ExternalLink
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/common/Badge';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -34,6 +37,7 @@ const TypeIcon = ({ type }: { type: NotificationType }) => {
 
 export function NotificationPanel({ className }: { className?: string }) {
     const { notifications, loading } = useNotifications();
+    const navigate = useNavigate();
 
     return (
         <div className={cn("flex flex-col h-full", className)}>
@@ -91,6 +95,24 @@ export function NotificationPanel({ className }: { className?: string }) {
                                         {notification.type === 'event' && (
                                             <div className="mt-2">
                                                 <Badge variant="info" className="text-[10px]">Academic Event</Badge>
+                                            </div>
+                                        )}
+
+                                        {/* Dynamic Redirect Button */}
+                                        {notification.actionUrl && (
+                                            <div className="mt-3">
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    className="h-7 text-[10px] gap-1.5 px-2"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(notification.actionUrl!);
+                                                    }}
+                                                >
+                                                    <ExternalLink className="w-3 h-3" />
+                                                    View Details
+                                                </Button>
                                             </div>
                                         )}
                                     </div>
