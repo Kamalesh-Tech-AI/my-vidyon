@@ -62,13 +62,13 @@ const VideoIntro = ({ onComplete, showOnce = false }: VideoIntroProps) => {
 
     return (
         <div
-            className={`fixed inset-0 z-[9999] bg-black flex items-center justify-center transition-opacity duration-800 ${fadeOut ? 'opacity-0' : 'opacity-100'
+            className={`fixed inset-0 z-[9999] w-screen h-screen h-dvh bg-black flex items-center justify-center overflow-hidden transition-opacity duration-800 ${fadeOut ? 'opacity-0' : 'opacity-100'
                 }`}
         >
             {/* Video Element */}
             <video
                 ref={videoRef}
-                className={`w-full h-full object-contain md:object-cover transition-opacity duration-500 ${isVideoLoaded ? 'opacity-100' : 'opacity-0'
+                className={`w-screen h-screen h-dvh object-cover transition-opacity duration-500 ${isVideoLoaded ? 'opacity-100' : 'opacity-0'
                     }`}
                 onEnded={handleVideoEnd}
                 onLoadedData={handleVideoLoaded}
