@@ -140,6 +140,91 @@
   h6 {
     @apply font-semibold tracking-tight;
   }
+
+  /* ========================================
+     CUSTOM MEDIA QUERIES
+     ======================================== */
+
+  /* Note: Tailwind's responsive classes (sm:, md:, lg:, xl:) ARE media queries.
+     They compile to the breakpoints below. Use these custom queries for 
+     edge cases not covered by Tailwind utilities. */
+
+  /* Mobile First - Base styles (no media query needed) */
+  /* Styles here apply to all screen sizes by default */
+
+  /* Small devices (landscape phones, 640px and up) */
+  @media (min-width: 640px) {
+    /* Equivalent to Tailwind's sm: prefix */
+    /* Example: .custom-element { width: 50%; } */
+  }
+
+  /* Medium devices (tablets, 768px and up) */
+  @media (min-width: 768px) {
+    /* Equivalent to Tailwind's md: prefix */
+  }
+
+  /* Large devices (desktops, 1024px and up) */
+  @media (min-width: 1024px) {
+    /* Equivalent to Tailwind's lg: prefix */
+  }
+
+  /* Extra large devices (large desktops, 1280px and up) */
+  @media (min-width: 1280px) {
+    /* Equivalent to Tailwind's xl: prefix */
+  }
+
+  /* 2XL devices (1536px and up) */
+  @media (min-width: 1536px) {
+    /* Equivalent to Tailwind's 2xl: prefix */
+  }
+
+  /* Mobile-specific (max-width for targeting only small screens) */
+  @media (max-width: 639px) {
+
+    /* Styles that ONLY apply to mobile */
+    .mobile-only-custom {
+      /* your styles */
+    }
+  }
+
+  /* Tablet-specific (between mobile and desktop) */
+  @media (min-width: 640px) and (max-width: 1023px) {
+
+    /* Styles that ONLY apply to tablets */
+    .tablet-only-custom {
+      /* your styles */
+    }
+  }
+
+  /* Desktop-specific (large screens only) */
+  @media (min-width: 1024px) {
+
+    /* Styles that ONLY apply to desktop */
+    .desktop-only-custom {
+      /* your styles */
+    }
+  }
+
+  /* Landscape orientation */
+  @media (orientation: landscape) {
+    /* Styles for landscape mode */
+  }
+
+  /* Portrait orientation */
+  @media (orientation: portrait) {
+    /* Styles for portrait mode */
+  }
+
+  /* High DPI screens (Retina displays) */
+  @media (-webkit-min-device-pixel-ratio: 2),
+  (min-resolution: 192dpi) {
+    /* Styles for high-resolution screens */
+  }
+
+  /* Dark mode preference */
+  @media (prefers-color-scheme: dark) {
+    /* Styles when user prefers dark mode */
+  }
 }
 
 @layer components {
