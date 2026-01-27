@@ -67,9 +67,17 @@ export function StudentSettings() {
                         <div className="bg-primary/10 h-24 sm:h-32 relative">
                             <div className="absolute -bottom-8 sm:-bottom-10 left-1/2 -translate-x-1/2">
                                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white p-1 border border-border">
-                                    <div className="w-full h-full rounded-full bg-primary/20 flex items-center justify-center text-xl sm:text-2xl font-bold text-primary">
-                                        {initials}
-                                    </div>
+                                    {studentProfile?.image_url ? (
+                                        <img
+                                            src={studentProfile.image_url}
+                                            alt={studentDisplayName}
+                                            className="w-full h-full rounded-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full rounded-full bg-primary/20 flex items-center justify-center text-xl sm:text-2xl font-bold text-primary">
+                                            {initials}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

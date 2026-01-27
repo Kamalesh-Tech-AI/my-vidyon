@@ -20,6 +20,7 @@ import { useWebSocketContext } from '@/context/WebSocketContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface Notification {
     id: string;
@@ -38,6 +39,54 @@ export function RealtimeNotificationBell() {
     const { user } = useAuth();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
+
+    // Load initial notifications from database on mount
+    useEffect(() => {
+        const loadInitialNotifications = async () => {
+            if (!user?.id) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('notifications')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                if (error) {
+                    console.error('Error loading notifications:', error);
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    const formattedNotifications: Notification[] = data.map(n => ({
+                        id: n.id,
+                        title: n.title,
+                        message: n.message,
+                        type: (n.type === 'error' || n.type === 'warning' || n.type === 'success') ? n.type : 'info',
+                        timestamp: new Date(n.created_at).getTime(),
+                        read: n.read || false,
+                        table: 'notifications',
+                        actionUrl: n.action_url
+                    }));
+
+                    setNotifications(prev => {
+                        // Merge with existing, avoid duplicates
+                        const existingIds = new Set(prev.map(n => n.id));
+                        const newNotifs = formattedNotifications.filter(n => !existingIds.has(n.id));
+                        return [...newNotifs, ...prev].slice(0, 20);
+                    });
+
+                    const unreadFromDb = formattedNotifications.filter(n => !n.read).length;
+                    setUnreadCount(prev => prev + unreadFromDb);
+                }
+            } catch (err) {
+                console.error('Unexpected error loading notifications:', err);
+            }
+        };
+
+        loadInitialNotifications();
+    }, [user?.id]);
 
     // Subscribe to leave requests (for institution/admin)
     useEffect(() => {
@@ -365,16 +414,57 @@ export function RealtimeNotificationBell() {
         }
     };
 
-    const markAsRead = (id: string) => {
+    const markAsRead = async (id: string) => {
+        // Update local state immediately for responsive UI
         setNotifications(prev =>
             prev.map(n => (n.id === id ? { ...n, read: true } : n))
         );
         setUnreadCount(prev => Math.max(0, prev - 1));
+
+        // Persist to database - only for notifications from the notifications table
+        try {
+            // Check if this is a notification from the notifications table (not event-* IDs)
+            if (!id.startsWith('event-')) {
+                const { error } = await supabase
+                    .from('notifications')
+                    .update({ read: true })
+                    .eq('id', id)
+                    .eq('user_id', user?.id);
+
+                if (error) {
+                    console.error('Error marking notification as read:', error);
+                }
+            }
+        } catch (err) {
+            console.error('Unexpected error marking notification as read:', err);
+        }
     };
 
-    const markAllAsRead = () => {
+    const markAllAsRead = async () => {
+        // Update local state immediately
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
         setUnreadCount(0);
+
+        // Persist to database - only update notifications from the notifications table
+        try {
+            const notificationIds = notifications
+                .filter(n => !n.id.startsWith('event-'))
+                .map(n => n.id);
+
+            if (notificationIds.length > 0) {
+                const { error } = await supabase
+                    .from('notifications')
+                    .update({ read: true })
+                    .in('id', notificationIds)
+                    .eq('user_id', user?.id);
+
+                if (error) {
+                    console.error('Error marking all notifications as read:', error);
+                }
+            }
+        } catch (err) {
+            console.error('Unexpected error marking all notifications as read:', err);
+        }
     };
 
     const clearAll = () => {

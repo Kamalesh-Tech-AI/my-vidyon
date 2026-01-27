@@ -245,12 +245,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
-        const user = await fetchUserProfile(session.user.id, session.user.email!);
-        setState({
-          user,
-          isAuthenticated: !!user,
-          isLoading: false,
-        });
+        try {
+          // Wrapped in timeout to prevent hangs
+          const userPromise = fetchUserProfile(session.user.id, session.user.email!);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Profile fetch timed out')), 15000)
+          );
+
+          const user = await Promise.race([userPromise, timeoutPromise]) as any;
+
+          setState({
+            user,
+            isAuthenticated: !!user,
+            isLoading: false,
+          });
+        } catch (err) {
+          console.error('[AUTH] Auto-signin profile fetch failed:', err);
+          setState(prev => ({ ...prev, isLoading: false }));
+        }
       } else if (event === 'SIGNED_OUT') {
         setState({
           user: null,
@@ -377,14 +389,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('[AUTH] Calling Supabase signInWithPassword');
 
-      // Add timeout to prevent infinite hang
+      // Add timeout to prevent infinite hang (shortened to 20s for better UX)
       const authPromise = supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Login request timed out after 45 seconds. Please check your internet connection.')), 45000)
+        setTimeout(() => reject(new Error('Login request timed out after 20 seconds. This usually means a weak internet connection or that the database is momentarily busy. Please try again.')), 20000)
       );
 
       const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
@@ -401,7 +413,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       console.log('[AUTH] Fetching user profile...');
-      const user = await fetchUserProfile(data.user.id, data.user.email);
+      const profilePromise = fetchUserProfile(data.user.id, data.user.email);
+      const profileTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Retrieving user profile timed out. The database might be slow or your connection dropped.')), 25000)
+      );
+
+      const user = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
 
       if (user) {
         console.log('[AUTH] Profile found, role:', user.role);
