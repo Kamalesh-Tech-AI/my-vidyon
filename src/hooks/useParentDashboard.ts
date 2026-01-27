@@ -50,25 +50,56 @@ interface LeaveRequest {
 export function useParentDashboard(parentId?: string, institutionId?: string) {
     const queryClient = useQueryClient();
 
-    // 1. Fetch Children
+    // 1. Fetch Children (Robust Lookup)
     const { data: children = [] } = useQuery({
         queryKey: ['parent-children', parentId],
         queryFn: async () => {
             if (!parentId) return [];
 
+            // A. Get Parent ID from profile mapping
+            const { data: parentRecord } = await supabase
+                .from('parents')
+                .select('id')
+                .eq('profile_id', parentId)
+                .single();
+
+            // B. Fetch via Join Table (student_parents)
+            let studentIds: string[] = [];
+            if (parentRecord) {
+                const { data: links } = await supabase
+                    .from('student_parents')
+                    .select('student_id')
+                    .eq('parent_id', parentRecord.id);
+                if (links) studentIds = links.map(l => l.student_id);
+            }
+
+            // C. Fetch via Direct Column (students.parent_id)
+            const { data: directStudents } = await supabase
+                .from('students')
+                .select('id')
+                .eq('parent_id', parentId);
+
+            if (directStudents) {
+                const directIds = directStudents.map(s => s.id);
+                studentIds = Array.from(new Set([...studentIds, ...directIds]));
+            }
+
+            if (studentIds.length === 0) return [];
+
+            // D. Get final details
             const { data, error } = await supabase
                 .from('students')
                 .select('*')
-                .eq('parent_id', parentId);
+                .in('id', studentIds);
 
             if (error) throw error;
 
             return (data || []).map((child: any) => ({
                 id: child.id,
-                name: child.full_name,
-                class: child.class_name,
-                section: child.section,
-                rollNumber: child.roll_number,
+                name: child.full_name || child.name || 'Unknown Student',
+                class: child.class_name || 'N/A',
+                section: child.section || 'A',
+                rollNumber: child.register_number || child.roll_number || 'N/A',
                 classId: child.class_id,
             })) as Child[];
         },
@@ -87,13 +118,16 @@ export function useParentDashboard(parentId?: string, institutionId?: string) {
 
             const attendancePromises = children.map(async (child) => {
                 const { data, error } = await supabase
-                    .from('student_attendance') // Correct table
+                    .from('student_attendance')
                     .select('*')
                     .eq('student_id', child.id)
                     .order('attendance_date', { ascending: false })
                     .limit(30);
 
-                if (error) throw error;
+                if (error) {
+                    console.error(`Error fetching attendance for ${child.id}:`, error);
+                    return { childId: child.id, childName: child.name, presentDays: 0, totalDays: 0, percentage: '0%' };
+                }
 
                 const presentDays = data?.filter(r => r.status === 'present').length || 0;
                 const totalDays = data?.length || 0;
@@ -113,30 +147,53 @@ export function useParentDashboard(parentId?: string, institutionId?: string) {
         staleTime: 2 * 60 * 1000,
     });
 
-    // 3. Fetch Leave Requests
+    // 3. Fetch Leave Requests (Unified Lookup)
     const { data: leaveRequests = [] } = useQuery({
         queryKey: ['parent-leave-requests', childIds],
         queryFn: async () => {
             if (childIds.length === 0) return [];
 
+            // Try student_leave_requests first (new table)
             const { data, error } = await supabase
-                .from('student_leave_requests') // Correct table
+                .from('student_leave_requests')
                 .select(`
                     *,
-                    students:student_id (name)
+                    students:student_id (full_name, name)
                 `)
                 .in('student_id', childIds)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .limit(10);
 
-            if (error) throw error;
+            if (error) {
+                console.warn('Error fetching from student_leave_requests, trying leave_requests fallback:', error);
+
+                // Fallback to old table if needed
+                const { data: oldData, error: oldError } = await supabase
+                    .from('leave_requests')
+                    .select(`*, students:student_id (full_name, name)`)
+                    .in('student_id', childIds)
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (oldError) throw oldError;
+
+                return (oldData || []).map((request: any) => ({
+                    id: request.id,
+                    childName: request.students?.full_name || request.students?.name || 'Unknown',
+                    startDate: request.start_date || request.from_date,
+                    endDate: request.end_date || request.to_date,
+                    reason: request.reason,
+                    status: (request.status || 'pending').toLowerCase(),
+                })) as LeaveRequest[];
+            }
 
             return (data || []).map((request: any) => ({
                 id: request.id,
-                childName: request.students?.name || 'Unknown',
+                childName: request.students?.full_name || request.students?.name || 'Unknown',
                 startDate: request.start_date,
                 endDate: request.end_date,
                 reason: request.reason,
-                status: request.status,
+                status: (request.status || 'pending').toLowerCase(),
             })) as LeaveRequest[];
         },
         enabled: childIds.length > 0,
