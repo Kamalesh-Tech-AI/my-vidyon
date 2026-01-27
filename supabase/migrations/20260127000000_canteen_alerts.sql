@@ -1,27 +1,26 @@
--- Migration: Canteen Alerts and Permissions (Final Robust Version)
+-- Migration: Canteen Alerts & Auto-Permission Sync
 -- Date: 2026-01-27
 
--- 1. Ensure canteen_attendance table exists
-CREATE TABLE IF NOT EXISTS public.canteen_attendance (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-    institution_id TEXT NOT NULL, 
-    canteen_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    status TEXT NOT NULL DEFAULT 'absent',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(student_id, canteen_date)
-);
+-- 1. Automatic Canteen Permission Sync Trigger
+-- Ensures that if a student is marked absent in morning attendance, they are automatically denied canteen access.
+CREATE OR REPLACE FUNCTION public.tr_sync_canteen_permission()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status = 'absent' THEN
+        NEW.canteen_permission := 'deny';
+    ELSIF NEW.status = 'present' AND NEW.canteen_permission IS NULL THEN
+        NEW.canteen_permission := 'allow';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- 2. Ensure schema columns exist
-ALTER TABLE public.student_attendance 
-ADD COLUMN IF NOT EXISTS canteen_permission TEXT DEFAULT 'allow' CHECK (canteen_permission IN ('allow', 'deny'));
+DROP TRIGGER IF EXISTS tr_attendance_canteen_sync ON public.student_attendance;
+CREATE TRIGGER tr_attendance_canteen_sync
+BEFORE INSERT OR UPDATE ON public.student_attendance
+FOR EACH ROW EXECUTE FUNCTION public.tr_sync_canteen_permission();
 
-ALTER TABLE public.canteen_attendance 
-ADD COLUMN IF NOT EXISTS photo_url TEXT,
-ADD COLUMN IF NOT EXISTS activity_log TEXT,
-ADD COLUMN IF NOT EXISTS metadata JSONB;
-
--- 3. Create/Replace violation notification function
+-- 2. Enhanced Violation Notification Function (with Debugging and Fallbacks)
 CREATE OR REPLACE FUNCTION public.tr_notify_canteen_violation()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -30,12 +29,15 @@ DECLARE
     v_class_name TEXT;
     v_section TEXT;
     v_student_name TEXT;
-    v_inst_uuid UUID; -- Internal Database UUID
-    v_inst_slug TEXT; -- Frontend Slug
+    v_inst_uuid UUID; 
     v_student_data JSONB;
 BEGIN
+    -- [DEBUG] Log the start of the trigger
+    RAISE NOTICE 'tr_notify_canteen_violation: Processing student % on % (Status: %)', NEW.student_id, NEW.canteen_date, NEW.status;
+
     -- Only trigger on 'present' status
     IF NEW.status != 'present' THEN
+        RAISE NOTICE 'tr_notify_canteen_violation: Status is not present. Skipping.';
         RETURN NEW;
     END IF;
 
@@ -47,34 +49,39 @@ BEGIN
     v_morning_status := COALESCE(v_morning_status, 'absent');
     v_canteen_perm := COALESCE(v_canteen_perm, 'allow');
 
-    -- Diagnostic: Check for violation
+    RAISE NOTICE 'tr_notify_canteen_violation: Morning Status: %, Canteen Perm: %', v_morning_status, v_canteen_perm;
+
+    -- Violation Check
     IF v_morning_status = 'absent' OR v_canteen_perm = 'deny' THEN
-        
-        -- Resolve Institution UUID from common sources
-        -- NEW.institution_id is usually the slug (e.g. 'MY-VIDYON-ERP')
+        RAISE NOTICE 'tr_notify_canteen_violation: VIOLATION DETECTED';
+
+        -- Resolve Institution UUID
+        -- First try matching the slug (NEW.institution_id is usually 'MYVID2026')
+        -- Fallback to the UUID if the frontend already sent it correctly
         SELECT id INTO v_inst_uuid 
         FROM public.institutions 
         WHERE (institution_id = NEW.institution_id OR id::text = NEW.institution_id)
         LIMIT 1;
 
-        -- Get student details using JSONB for schema-insensitivity (handles name vs full_name)
-        SELECT to_jsonb(s) INTO v_student_data 
-        FROM public.students s 
-        WHERE s.id = NEW.student_id;
+        RAISE NOTICE 'tr_notify_canteen_violation: Resolved Inst UUID: %', v_inst_uuid;
 
+        -- Get student details (Defensive handling of naming variations)
+        SELECT to_jsonb(s) INTO v_student_data FROM public.students s WHERE s.id = NEW.student_id;
         v_student_name := COALESCE(v_student_data->>'full_name', v_student_data->>'name', 'Student');
         v_class_name := v_student_data->>'class_name';
         v_section := v_student_data->>'section';
         
-        -- If v_inst_uuid still null, fallback to student's record
+        -- Fallback to student's record for inst_id if still null
         v_inst_uuid := COALESCE(v_inst_uuid, (v_student_data->>'institution_id')::uuid);
+
+        RAISE NOTICE 'tr_notify_canteen_violation: Student found: %, Class: %', v_student_name, v_class_name;
 
         -- 1. Notify Student
         INSERT INTO public.notifications (user_id, title, message, type, action_url)
         VALUES (
             NEW.student_id,
             'Canteen Entry Alert',
-            'Unauthorized canteen entry detected. Status: ' || v_morning_status || '.',
+            'You have been detected in the canteen while marked ' || v_morning_status || ' today.',
             'attendance',
             NEW.photo_url
         );
@@ -87,12 +94,12 @@ BEGIN
                'attendance', 
                NEW.photo_url
         FROM (
-            -- Join Table Strategy
+            -- Student Parents Join Table
             SELECT pr.profile_id FROM public.student_parents sp
             INNER JOIN public.parents pr ON sp.parent_id = pr.id
             WHERE sp.student_id = NEW.student_id AND pr.profile_id IS NOT NULL
             UNION
-            -- Direct Column Strategy
+            -- Direct parent_id in students table
             SELECT (v_student_data->>'parent_id')::uuid WHERE (v_student_data->>'parent_id') IS NOT NULL
         ) as combined_parents;
 
@@ -104,14 +111,13 @@ BEGIN
                'attendance', 
                NEW.photo_url
         FROM (
-            -- Classes Table Strategy
+            -- Classes table lookup
             SELECT class_teacher_id FROM public.classes 
-            WHERE name = v_class_name 
-            AND (section IS NULL OR section = v_section) 
+            WHERE name = v_class_name AND (section IS NULL OR section = v_section) 
             AND (institution_id = v_inst_uuid)
             AND class_teacher_id IS NOT NULL
             UNION
-            -- Faculty Assignments Strategy
+            -- Faculty Subjects lookup
             SELECT fs.faculty_profile_id FROM public.faculty_subjects fs
             INNER JOIN public.classes c ON fs.class_id = c.id
             WHERE c.name = v_class_name AND (c.section = v_section OR fs.section = v_section)
@@ -122,33 +128,38 @@ BEGIN
         -- 4. Notify Campus Admins
         INSERT INTO public.notifications (user_id, title, message, type, action_url)
         SELECT id, 
-               'Security Notice: ' || v_student_name, 
-               'Unauthorized canteen entry: ' || v_student_name || ' (Class ' || v_class_name || ').', 
-               'attendance', 
+               'Security Incident: Canteen', 
+               v_student_name || ' triggered a canteen alert (Morning Status: ' || v_morning_status || ').', 
+               'error', 
                NEW.photo_url
         FROM public.profiles
         WHERE institution_id = v_inst_uuid
         AND role IN ('admin', 'institution')
         AND id != NEW.student_id
         LIMIT 10;
-
+        
+        RAISE NOTICE 'tr_notify_canteen_violation: Notifications sent.';
+    ELSE
+         RAISE NOTICE 'tr_notify_canteen_violation: No violation found.';
     END IF;
 
     RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
-    -- Prevent trigger crash from blocking canteen operations
     RAISE WARNING 'Canteen notification failed: %', SQLERRM;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 4. Create trigger
+-- 3. Ensure trigger is active (Fixed Syntax: FOR EACH ROW must come after AFTER)
 DROP TRIGGER IF EXISTS tr_canteen_violation ON public.canteen_attendance;
 CREATE TRIGGER tr_canteen_violation
 AFTER INSERT OR UPDATE ON public.canteen_attendance
-FOR EACH ROW EXECUTE FUNCTION public.tr_notify_canteen_violation();
+FOR EACH ROW
+EXECUTE FUNCTION public.tr_notify_canteen_violation();
 
--- 5. Permissions
-ALTER TABLE public.canteen_attendance ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public canteen access" ON public.canteen_attendance;
-CREATE POLICY "Public canteen access" ON public.canteen_attendance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- 4. Fast Sync for Today's Data
+UPDATE public.student_attendance
+SET canteen_permission = 'deny'
+WHERE status = 'absent' 
+AND attendance_date = CURRENT_DATE 
+AND (canteen_permission IS NULL OR canteen_permission = 'allow');

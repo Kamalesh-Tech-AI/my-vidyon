@@ -41,34 +41,79 @@ export function ParentChildDetail() {
         queryFn: async () => {
             if (!studentId) throw new Error('Student ID required');
 
-            // Fetch basic profile
-            const { data, error } = await supabase
+            // 1. Fetch Basic Profile
+            const { data: studentData, error: studentError } = await supabase
                 .from('students')
                 .select('*')
                 .eq('id', studentId)
                 .single();
 
-            if (error) throw error;
+            if (studentError) throw studentError;
 
-            // Return with mixed mock data for performance/attendance
+            // 2. Fetch Real Attendance
+            const { data: attendanceData } = await supabase
+                .from('student_attendance')
+                .select('*')
+                .eq('student_id', studentId)
+                .order('attendance_date', { ascending: false })
+                .limit(30);
+
+            const attendanceHistory = (attendanceData || []).reverse().map(a => ({
+                name: new Date(a.attendance_date).toLocaleDateString(undefined, { weekday: 'short' }),
+                value: a.status === 'present' ? 100 : 0
+            }));
+
+            const presentCount = attendanceData?.filter(a => a.status === 'present').length || 0;
+            const totalAttendance = attendanceData?.length || 0;
+            const attendance_percentage = totalAttendance > 0 ? Math.round((presentCount / totalAttendance) * 100) : 0;
+
+            // 3. Fetch Real Assignments
+            const { data: assignmentsData } = await supabase
+                .from('assignments')
+                .select(`
+                    *,
+                    submissions (status, grade)
+                `)
+                .eq('class_id', studentData.class_id)
+                .order('due_date', { ascending: false })
+                .limit(5);
+
+            const assignments = (assignmentsData || []).map(a => ({
+                title: a.title,
+                subject: a.subject,
+                dueDate: new Date(a.due_date).toLocaleDateString(),
+                status: a.submissions?.[0]?.status || 'pending'
+            }));
+
+            // 4. Fetch Real Grades (Marks)
+            const { data: gradesData } = await supabase
+                .from('grades')
+                .select('*')
+                .eq('student_id', studentId)
+                .order('date', { ascending: false })
+                .limit(5);
+
+            const marks = (gradesData || []).map(g => ({
+                subject: g.subject,
+                unitTest: g.exam_type?.includes('Quiz') ? `${g.marks}/${g.total_marks}` : '-',
+                midTerm: g.exam_type?.includes('Midterm') ? `${g.marks}/${g.total_marks}` : '-',
+                final: g.exam_type?.includes('Final') ? `${g.marks}/${g.total_marks}` : '-',
+                grade: g.grade_letter || '-'
+            }));
+
             return {
-                ...data,
-                // Mocking complex nested data until tables exist
-                attendanceHistory: [
-                    { name: 'Mon', value: 100 },
-                    { name: 'Tue', value: 100 },
-                    { name: 'Wed', value: 0 },
-                    { name: 'Thu', value: 100 },
-                    { name: 'Fri', value: 100 },
+                ...studentData,
+                name: studentData.full_name || studentData.name,
+                attendanceHistory: attendanceHistory.length > 0 ? attendanceHistory : [
+                    { name: 'Mon', value: 0 }, { name: 'Tue', value: 0 }, { name: 'Wed', value: 0 },
+                    { name: 'Thu', value: 0 }, { name: 'Fri', value: 0 }
                 ],
-                marks: [
-                    { subject: 'Mathematics', unitTest: '18/20', midTerm: '45/50', final: '92/100', grade: 'A1' },
-                    { subject: 'Science', unitTest: '16/20', midTerm: '42/50', final: '88/100', grade: 'A2' },
-                    { subject: 'English', unitTest: '19/20', midTerm: '48/50', final: '95/100', grade: 'A1' },
+                attendance_percentage,
+                marks: marks.length > 0 ? marks : [
+                    { subject: 'No data', unitTest: '-', midTerm: '-', final: '-', grade: '-' }
                 ],
-                assignments: [
-                    { title: 'Algebra Worksheet', subject: 'Mathematics', dueDate: 'Dec 25, 2025', status: 'pending' },
-                    { title: 'Physics Lab Report', subject: 'Science', dueDate: 'Dec 22, 2025', status: 'submitted' },
+                assignments: assignments.length > 0 ? assignments : [
+                    { title: 'No assignments', subject: 'N/A', dueDate: '-', status: 'none' }
                 ]
             };
         },
