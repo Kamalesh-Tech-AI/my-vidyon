@@ -32,15 +32,6 @@ export function CanteenSettings() {
     useEffect(() => {
         if (!user) return;
 
-        // Mock Data Bypass
-        if (user.id.startsWith('MOCK_')) {
-            setPersonalInfo({
-                phone: '+91 98765 43210',
-                address: 'Canteen Building, Main Campus'
-            });
-            return;
-        }
-
         const fetchProfile = async () => {
             setIsLoading(true);
             try {
@@ -76,15 +67,6 @@ export function CanteenSettings() {
     const handleSavePersonalInfo = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSavingPersonalInfo(true);
-
-        // Mock Data Bypass
-        if (user?.id.startsWith('MOCK_')) {
-            setTimeout(() => {
-                setIsSavingPersonalInfo(false);
-                toast.success('Personal information updated successfully!');
-            }, 1000);
-            return;
-        }
 
         try {
             // Check if address column exists by peeking the profile first? 
@@ -152,20 +134,6 @@ export function CanteenSettings() {
         }
 
         setIsUpdatingPassword(true);
-
-        // Mock Data Bypass
-        if (user?.id.startsWith('MOCK_')) {
-            setTimeout(() => {
-                setIsUpdatingPassword(false);
-                setPasswordData({
-                    currentPassword: '',
-                    newPassword: '',
-                    confirmPassword: ''
-                });
-                toast.success('Password updated successfully');
-            }, 1000);
-            return;
-        }
 
         try {
             const { error } = await supabase.auth.updateUser({

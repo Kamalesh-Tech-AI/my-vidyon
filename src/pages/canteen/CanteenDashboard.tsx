@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils';
 
 export function CanteenDashboard() {
     const { user } = useAuth();
-    const { allClasses } = useInstitution();
     const [viewMode, setViewMode] = useState<'classes' | 'sections' | 'students'>('classes');
     const [selectedClass, setSelectedClass] = useState<string | null>(null);
     const [selectedSection, setSelectedSection] = useState<string | null>(null);
@@ -33,58 +32,68 @@ export function CanteenDashboard() {
     const [attendance, setAttendance] = useState<Record<string, string>>({});
     const [canteenEntries, setCanteenEntries] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
+    const [dbClasses, setDbClasses] = useState<string[]>([]);
+    const [dbSections, setDbSections] = useState<string[]>([]);
 
     const institutionId = user?.institutionId;
     const today = new Date().toISOString().split('T')[0];
 
-    // Get unique classes sorted
-    const classGroups = useMemo(() => {
-        const unique = Array.from(new Set(allClasses.map(c => c.name)));
-        return unique.sort((a, b) => {
-            const order = ['LKG', 'UKG'];
-            const indexA = order.indexOf(a);
-            const indexB = order.indexOf(b);
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-            return a.localeCompare(b, undefined, { numeric: true });
-        });
-    }, [allClasses]);
+    // Fetch unique classes on mount
+    useEffect(() => {
+        const fetchClasses = async () => {
+            if (!institutionId) return;
+            try {
+                const { data, error } = await supabase
+                    .from('students')
+                    .select('class_name')
+                    .eq('institution_id', institutionId)
+                    .not('class_name', 'is', null);
 
-    const availableSections = useMemo(() => {
-        if (!selectedClass) return [];
-        return allClasses
-            .filter(c => c.name === selectedClass)
-            .map(c => c.section)
-            .sort();
-    }, [selectedClass, allClasses]);
+                if (error) throw error;
+
+                const uniqueClasses = Array.from(new Set(data.map(s => s.class_name))).sort((a, b) => {
+                    const order = ['LKG', 'UKG'];
+                    const indexA = order.indexOf(a);
+                    const indexB = order.indexOf(b);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return a.localeCompare(b, undefined, { numeric: true });
+                });
+                setDbClasses(uniqueClasses);
+            } catch (err: any) {
+                console.error('Error fetching classes:', err);
+            }
+        };
+        fetchClasses();
+    }, [institutionId]);
+
+    // Fetch unique sections when class is selected
+    useEffect(() => {
+        const fetchSections = async () => {
+            if (!institutionId || !selectedClass) return;
+            try {
+                const { data, error } = await supabase
+                    .from('students')
+                    .select('section')
+                    .eq('institution_id', institutionId)
+                    .eq('class_name', selectedClass)
+                    .not('section', 'is', null);
+
+                if (error) throw error;
+
+                const uniqueSections = Array.from(new Set(data.map(s => s.section))).sort();
+                setDbSections(uniqueSections);
+            } catch (err: any) {
+                console.error('Error fetching sections:', err);
+            }
+        };
+        fetchSections();
+    }, [institutionId, selectedClass]);
 
     const fetchStudents = async () => {
         if (!selectedClass || !selectedSection || !institutionId) return;
         setLoading(true);
-
-        // Mock Data Bypass
-        if (user?.id.startsWith('MOCK_')) {
-            await new Promise(resolve => setTimeout(resolve, 800));
-            const mockStudents = [
-                { id: 'S1', name: 'John Doe', roll_no: '101' },
-                { id: 'S2', name: 'Jane Smith', roll_no: '102' },
-                { id: 'S3', name: 'Alex Johnson', roll_no: '103' },
-                { id: 'S4', name: 'Sarah Parker', roll_no: '104' },
-                { id: 'S5', name: 'Michael Brown', roll_no: '105' },
-            ];
-
-            setStudents(mockStudents);
-            setAttendance({
-                'S2': 'absent',
-                'S4': 'absent'
-            });
-            setCanteenEntries({
-                'S1': 'present'
-            });
-            setLoading(false);
-            return;
-        }
 
         try {
             const { data: studentsData, error: studentError } = await supabase
@@ -93,6 +102,7 @@ export function CanteenDashboard() {
                 .eq('institution_id', institutionId)
                 .eq('class_name', selectedClass)
                 .eq('section', selectedSection)
+                .eq('is_active', true)
                 .order('name');
 
             if (studentError) throw studentError;
@@ -140,12 +150,6 @@ export function CanteenDashboard() {
             ? (canteenEntries[studentId] === 'present' ? 'absent' : 'present')
             : 'absent';
 
-        if (user?.id.startsWith('MOCK_')) {
-            setCanteenEntries(prev => ({ ...prev, [studentId]: newStatus }));
-            toast.success(newStatus === 'present' ? 'Permitted in canteen' : 'Marked absent in canteen');
-            return;
-        }
-
         try {
             const { error } = await supabase
                 .from('canteen_attendance')
@@ -183,13 +187,13 @@ export function CanteenDashboard() {
     const filteredStudents = useMemo(() => {
         return students.filter(s =>
             s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            s.roll_no?.toLowerCase().includes(searchTerm.toLowerCase())
+            s.register_number?.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [students, searchTerm]);
 
     const stats = useMemo(() => {
-        const morningPresent = filteredStudents.filter(s => attendance[s.id] === 'present').length;
-        const morningAbsent = filteredStudents.filter(s => attendance[s.id] === 'absent').length;
+        const morningPresent = filteredStudents.filter(s => (attendance[s.id] || 'absent') === 'present').length;
+        const morningAbsent = filteredStudents.filter(s => (attendance[s.id] || 'absent') === 'absent').length;
         const canteenPermitted = filteredStudents.filter(s => canteenEntries[s.id] === 'present').length;
         return { morningPresent, morningAbsent, canteenPermitted, total: filteredStudents.length };
     }, [filteredStudents, attendance, canteenEntries]);
@@ -213,7 +217,7 @@ export function CanteenDashboard() {
 
             {viewMode === 'classes' && (
                 <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-500">
-                    {classGroups.map((cls) => (
+                    {dbClasses.map((cls) => (
                         <Card
                             key={cls}
                             className="p-4 md:p-6 cursor-pointer hover:shadow-xl hover:border-primary/50 hover:scale-102 transition-all bg-card/50 backdrop-blur-sm border-2 flex flex-col items-center justify-center text-center gap-3 md:gap-4 group"
@@ -241,7 +245,7 @@ export function CanteenDashboard() {
                         <h2 className="text-3xl font-bold">Select Section</h2>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                        {availableSections.map((sec) => (
+                        {dbSections.map((sec) => (
                             <Card
                                 key={sec}
                                 className="p-4 md:p-8 cursor-pointer hover:shadow-lg hover:border-primary border-2 transition-all bg-card flex items-center justify-between group"
@@ -316,7 +320,7 @@ export function CanteenDashboard() {
                         <>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {filteredStudents.map((student) => {
-                                    const morningStatus = attendance[student.id] || 'present';
+                                    const morningStatus = attendance[student.id] || 'absent';
                                     const isMorningPresent = morningStatus === 'present';
                                     const isCanteenPermitted = canteenEntries[student.id] === 'present';
 
@@ -343,7 +347,7 @@ export function CanteenDashboard() {
                                                     <div className="min-w-0 flex-1">
                                                         <h3 className="font-bold text-sm leading-tight truncate">{student.name}</h3>
                                                         <p className="text-xs text-muted-foreground font-medium">
-                                                            Roll: {student.roll_no || student.id.slice(0, 4)}
+                                                            Reg: {student.register_number || student.id.slice(0, 4)}
                                                         </p>
                                                     </div>
                                                 </div>
