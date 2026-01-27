@@ -14,6 +14,7 @@ import {
     ExternalLink
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/common/Badge';
 import { Card } from '@/components/ui/card';
@@ -38,6 +39,7 @@ const TypeIcon = ({ type }: { type: NotificationType }) => {
 export function NotificationPanel({ className }: { className?: string }) {
     const { notifications, loading } = useNotifications();
     const navigate = useNavigate();
+    const { user } = useAuth();
 
     return (
         <div className={cn("flex flex-col h-full", className)}>
@@ -66,8 +68,15 @@ export function NotificationPanel({ className }: { className?: string }) {
                         {notifications.map((notification) => (
                             <Card
                                 key={notification.id}
+                                onClick={() => {
+                                    if (user?.role !== 'parent' && notification.actionUrl) {
+                                        navigate(notification.actionUrl);
+                                    }
+                                }}
                                 className={cn(
-                                    "p-3 sm:p-4 transition-all hover:bg-muted/50 cursor-pointer border-l-4 touch-active",
+                                    "p-3 sm:p-4 transition-all border-l-4 touch-active",
+                                    user?.role !== 'parent' && "hover:bg-muted/50 cursor-pointer",
+                                    user?.role === 'parent' && "cursor-default",
                                     notification.read ? "border-l-transparent" : "border-l-primary bg-primary/5"
                                 )}
                             >
@@ -91,15 +100,8 @@ export function NotificationPanel({ className }: { className?: string }) {
                                             {notification.message}
                                         </p>
 
-                                        {/* Action Button for Events */}
-                                        {notification.type === 'event' && (
-                                            <div className="mt-2">
-                                                <Badge variant="info" className="text-[10px]">Academic Event</Badge>
-                                            </div>
-                                        )}
-
-                                        {/* Dynamic Redirect Button */}
-                                        {notification.actionUrl && (
+                                        {/* Action Button - Hidden for Parents as per request */}
+                                        {notification.actionUrl && user?.role !== 'parent' && (
                                             <div className="mt-3">
                                                 <Button
                                                     size="sm"

@@ -69,6 +69,7 @@ export function StudentNotifications() {
                                 message={notification.message}
                                 type={notification.type as any} // Cast comfortably as types are aligned or string
                                 time={notification.date}
+                                actionUrl={notification.actionUrl}
                             />
                         ))}
                     </div>

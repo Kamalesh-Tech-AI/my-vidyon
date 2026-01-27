@@ -29,41 +29,52 @@ export function StudentExamScheduleView() {
 
             try {
                 // Get student info from students table
-                const { data: studentData, error: studentError } = await supabase
+                let { data: studentData, error: studentError } = await supabase
                     .from('students')
                     .select('class_name, section')
                     .eq('email', user.email)
                     .maybeSingle();
 
                 if (studentError) {
-                    console.error('Error fetching student data:', studentError);
+                    console.error('Detailed Error fetching student data:', {
+                        message: studentError.message,
+                        details: studentError.details,
+                        hint: studentError.hint,
+                        code: studentError.code,
+                        email: user.email
+                    });
                     return;
                 }
 
                 if (!studentData) {
-                    console.log('No student data found');
-                    return;
+                    console.warn('No student data found for email:', user.email);
+                    // Try case-insensitive fallback if exact match fails
+                    const { data: fallbackData } = await supabase
+                        .from('students')
+                        .select('class_name, section')
+                        .ilike('email', user.email)
+                        .maybeSingle();
+
+                    if (fallbackData) {
+                        console.log('Found student data via case-insensitive email match');
+                        studentData = fallbackData;
+                    } else {
+                        console.error('No student record found for this email');
+                        return;
+                    }
                 }
 
-                // Get class ID from classes table
-                const { data: classData, error: classError } = await supabase
-                    .from('classes')
-                    .select('id')
-                    .eq('name', studentData.class_name)
-                    .maybeSingle();
+                // Use class_name directly since exam_schedules.class_id stores the class name as TEXT
+                setStudentInfo({
+                    class_id: studentData.class_name, // exam_schedules.class_id expects the class name
+                    class_name: studentData.class_name || 'Your Class',
+                    section: studentData.section || '',
+                });
 
-                if (classError) {
-                    console.error('Error fetching class data:', classError);
-                    return;
-                }
-
-                if (classData) {
-                    setStudentInfo({
-                        class_id: classData.id,
-                        class_name: studentData.class_name,
-                        section: studentData.section,
-                    });
-                }
+                console.log('Student info loaded:', {
+                    class_name: studentData.class_name,
+                    section: studentData.section
+                });
             } catch (err) {
                 console.error('Error in fetchStudentInfo:', err);
             }
@@ -73,12 +84,38 @@ export function StudentExamScheduleView() {
     }, [user?.email]);
 
     // Fetch exam schedules for student's class
-    const { data: examSchedules = [], isLoading } = useQuery({
+    const { data: examSchedules = [], isLoading, refetch } = useQuery({
         queryKey: ['student-exam-schedules', user?.institutionId, studentInfo?.class_id, studentInfo?.section],
         queryFn: async () => {
-            if (!user?.institutionId || !studentInfo?.class_id || !studentInfo?.section) return [];
+            if (!user?.institutionId || !studentInfo?.class_id || !studentInfo?.section) {
+                console.log('❌ Missing required data for fetching exam schedules:', {
+                    institutionId: user?.institutionId,
+                    class_id: studentInfo?.class_id,
+                    section: studentInfo?.section
+                });
+                return [];
+            }
 
-            const { data, error } = await supabase
+            console.log('🔍 STUDENT EXAM SCHEDULE QUERY - Starting fetch with:', {
+                institution_id: user.institutionId,
+                class_id: studentInfo.class_id,
+                section: studentInfo.section,
+                user_email: user.email
+            });
+
+            // First, check what exam schedules exist in the database for debugging
+            const { data: allSchedules } = await supabase
+                .from('exam_schedules')
+                .select('id, class_id, section, exam_display_name, institution_id')
+                .eq('institution_id', user.institutionId);
+
+            console.log('📊 All exam schedules in database for this institution:', {
+                count: allSchedules?.length || 0,
+                schedules: allSchedules
+            });
+
+            // Try exact match first
+            let { data, error } = await supabase
                 .from('exam_schedules')
                 .select(`
                     *,
@@ -89,14 +126,73 @@ export function StudentExamScheduleView() {
                 .eq('section', studentInfo.section)
                 .order('created_at', { ascending: false });
 
+            console.log('🔍 Exact match query result:', {
+                success: !error,
+                count: data?.length || 0,
+                error: error,
+                data: data
+            });
+
             if (error) {
-                console.error('Error fetching exam schedules:', error);
-                return [];
+                console.error('❌ Error fetching exam schedules (exact match):', {
+                    message: error.message,
+                    details: error.details,
+                    hint: error.hint,
+                    code: error.code
+                });
             }
+
+            // If no results, try case-insensitive matching
+            if (!data || data.length === 0) {
+                console.log('🔄 No exact matches found. Trying case-insensitive matching...');
+                const fallbackQuery = await supabase
+                    .from('exam_schedules')
+                    .select(`
+                        *,
+                        exam_schedule_entries (*)
+                    `)
+                    .eq('institution_id', user.institutionId)
+                    .ilike('class_id', studentInfo.class_id)
+                    .ilike('section', studentInfo.section)
+                    .order('created_at', { ascending: false });
+
+                console.log('🔍 Case-insensitive query result:', {
+                    success: !fallbackQuery.error,
+                    count: fallbackQuery.data?.length || 0,
+                    error: fallbackQuery.error,
+                    data: fallbackQuery.data
+                });
+
+                if (fallbackQuery.error) {
+                    console.error('❌ Error fetching exam schedules (case-insensitive):', fallbackQuery.error);
+                    return [];
+                }
+
+                data = fallbackQuery.data;
+            }
+
+            console.log('✅ FINAL RESULT - Fetched exam schedules:', {
+                count: data?.length || 0,
+                has_entries: data?.some(s => s.exam_schedule_entries?.length > 0),
+                schedules: data?.map(s => ({
+                    id: s.id,
+                    exam_name: s.exam_display_name,
+                    class_id: s.class_id,
+                    section: s.section,
+                    entries_count: s.exam_schedule_entries?.length || 0
+                })),
+                filters_used: {
+                    institution_id: user.institutionId,
+                    class_id: studentInfo.class_id,
+                    section: studentInfo.section
+                }
+            });
 
             return data || [];
         },
         enabled: !!user?.institutionId && !!studentInfo?.class_id && !!studentInfo?.section,
+        staleTime: 5000, // Cache for 5 seconds
+        refetchInterval: 10000, // Auto-refetch every 10 seconds for realtime effect
     });
 
     // Realtime subscription for exam schedules
@@ -118,6 +214,7 @@ export function StudentExamScheduleView() {
                 (payload) => {
                     console.log('Exam schedule changed:', payload);
                     toast.info('Exam schedules updated', { duration: 2000 });
+                    refetch(); // Trigger refetch when schedules change
                 }
             )
             .on(
@@ -127,8 +224,9 @@ export function StudentExamScheduleView() {
                     schema: 'public',
                     table: 'exam_schedule_entries'
                 },
-                () => {
-                    // Silently refetch when entries change
+                (payload) => {
+                    console.log('Exam schedule entries changed:', payload);
+                    refetch(); // Trigger refetch when entries change
                 }
             )
             .subscribe();
@@ -137,7 +235,7 @@ export function StudentExamScheduleView() {
             console.log('Cleaning up realtime subscription');
             supabase.removeChannel(channel);
         };
-    }, [user?.institutionId, studentInfo?.class_id]);
+    }, [user?.institutionId, studentInfo?.class_id, refetch]);
 
     // PDF Download Handler
     const handleDownloadPDF = (schedule: any) => {

@@ -838,7 +838,8 @@ export function TimetableManagement() {
                                 message: `A special timetable has been added for your child in ${className} - ${sec} on ${specialClassDate}.${specialClassTitle ? ` Reason: ${specialClassTitle}` : ''}`,
                                 type: 'timetable',
                                 created_at: timestamp,
-                                read: false
+                                read: false,
+                                action_url: '/parent'
                             });
                         }
                     });

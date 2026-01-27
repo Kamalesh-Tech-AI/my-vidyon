@@ -1,7 +1,21 @@
-import { Bell, Info, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Bell, Info, AlertTriangle, CheckCircle, X, Calendar, BookOpen, Clock, CreditCard, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type NotificationType = 'info' | 'warning' | 'success' | 'error';
+import { useNavigate } from 'react-router-dom';
+
+type NotificationType =
+  | 'assignment'
+  | 'attendance'
+  | 'leave'
+  | 'announcement'
+  | 'exam'
+  | 'fees'
+  | 'event'
+  | 'timetable'
+  | 'info'
+  | 'warning'
+  | 'success'
+  | 'error';
 
 interface NotificationCardProps {
   title: string;
@@ -10,13 +24,22 @@ interface NotificationCardProps {
   time: string;
   read?: boolean;
   onDismiss?: () => void;
+  actionUrl?: string;
 }
 
-const typeConfig = {
+const typeConfig: Record<string, { icon: any, color: string, bg: string }> = {
   info: { icon: Info, color: 'text-info', bg: 'bg-info/10' },
   warning: { icon: AlertTriangle, color: 'text-warning', bg: 'bg-warning/10' },
   success: { icon: CheckCircle, color: 'text-success', bg: 'bg-success/10' },
   error: { icon: Bell, color: 'text-destructive', bg: 'bg-destructive/10' },
+  assignment: { icon: BookOpen, color: 'text-primary', bg: 'bg-primary/10' },
+  attendance: { icon: Clock, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  leave: { icon: Calendar, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+  announcement: { icon: Bell, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  exam: { icon: BookOpen, color: 'text-red-500', bg: 'bg-red-500/10' },
+  fees: { icon: CreditCard, color: 'text-green-500', bg: 'bg-green-500/10' },
+  event: { icon: Calendar, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+  timetable: { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10' },
 };
 
 export function NotificationCard({
@@ -26,15 +49,26 @@ export function NotificationCard({
   time,
   read = false,
   onDismiss,
+  actionUrl,
 }: NotificationCardProps) {
-  const config = typeConfig[type];
+  const navigate = useNavigate();
+  const config = typeConfig[type] || typeConfig.info;
   const Icon = config.icon;
 
+  const handleClick = () => {
+    if (actionUrl) {
+      navigate(actionUrl);
+    }
+  };
+
   return (
-    <div className={cn(
-      'flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg border border-border transition-colors touch-active',
-      read ? 'bg-background' : 'bg-accent/30'
-    )}>
+    <div
+      onClick={handleClick}
+      className={cn(
+        'flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg border border-border transition-colors touch-active cursor-pointer hover:bg-accent/10',
+        read ? 'bg-background' : 'bg-accent/30',
+        actionUrl && 'hover:border-primary/30 transition-all shadow-sm active:scale-[0.98]'
+      )}>
       <div className={cn('p-2 rounded-lg flex-shrink-0', config.bg)}>
         <Icon className={cn('w-4 h-4', config.color)} />
       </div>

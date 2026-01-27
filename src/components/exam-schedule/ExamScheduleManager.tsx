@@ -4,7 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+    CardDescription,
+} from '@/components/ui/card';
 import {
     Select,
     SelectContent,
@@ -21,9 +27,10 @@ import {
 import { ExamTypeSelector, EXAM_TYPES, type ExamType } from './ExamTypeSelector';
 import { ManualEntryForm, type ExamEntry } from './ManualEntryForm';
 import { ExamSchedulePreview } from './ExamSchedulePreview';
-import { Plus, History, X } from 'lucide-react';
+import { Plus, History, X, Info, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import Loader from '@/components/common/Loader';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface ExamScheduleManagerProps {
     classId?: string;
@@ -67,22 +74,16 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
         enabled: !!user?.institutionId,
     });
 
-    // Filter unique class names
-    const uniqueClassNames = Array.from(new Set(classes.map(c => c.name))).sort((a, b) => {
-        // Natural sort for class names (e.g., 1st, 2nd, 10th)
-        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-    });
-
-    // Available sections for the selected class name
-    const availableSections = Array.from(new Set(
-        classes
-            .filter(c => c.name === selectedClassName)
-            .flatMap(c => c.sections || [])
-    )).sort();
-
-    // Auto-select class ID based on name and section
+    // Initialize from props and keep fixed
     useEffect(() => {
-        if (selectedClassName && selectedSection) {
+        if (className) setSelectedClassName(className);
+        if (section) setSelectedSection(section);
+        if (classId) setSelectedClass(classId);
+    }, [className, section, classId]);
+
+    // Auto-select class ID based on name and section if classId not provided
+    useEffect(() => {
+        if (selectedClassName && selectedSection && !selectedClass) {
             const cls = classes.find(c =>
                 c.name === selectedClassName &&
                 Array.isArray(c.sections) &&
@@ -92,22 +93,9 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                 setSelectedClass(cls.id);
             }
         }
-    }, [selectedClassName, selectedSection, classes]);
+    }, [selectedClassName, selectedSection, classes, selectedClass]);
 
-    // Initialize from props
-    useEffect(() => {
-        if (className && !selectedClassName) {
-            setSelectedClassName(className);
-        }
-        if (section && !selectedSection) {
-            setSelectedSection(section);
-        }
-        if (classId && !selectedClass) {
-            setSelectedClass(classId);
-        }
-    }, [className, section, classId]);
-
-    // Get the selected class details
+    // Get the selected class details (primarily for validation)
     const selectedClassData = classes.find(c => c.id === selectedClass);
 
     // Fetch existing exam schedules with refetch interval for realtime
@@ -116,14 +104,21 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
         queryFn: async () => {
             if (!user?.institutionId || !selectedClass || !selectedSection) return [];
 
+            // Get class name from selectedClass UUID
+            const classData = classes.find(c => c.id === selectedClass);
+            if (!classData) {
+                console.error('Class not found for ID:', selectedClass);
+                return [];
+            }
+
             const { data, error } = await supabase
                 .from('exam_schedules')
                 .select(`
-                    *,
-                    exam_schedule_entries (*)
-                `)
+    *,
+    exam_schedule_entries(*)
+        `)
                 .eq('institution_id', user.institutionId)
-                .eq('class_id', selectedClass)
+                .eq('class_id', classData.name) // Use class name to match schema
                 .eq('section', selectedSection)
                 .order('created_at', { ascending: false });
 
@@ -134,7 +129,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
 
             return data || [];
         },
-        enabled: !!user?.institutionId && !!selectedClass && !!selectedSection,
+        enabled: !!user?.institutionId && !!selectedClass && !!selectedSection && classes.length > 0,
         refetchInterval: 3000, // Refetch every 3 seconds for realtime effect
     });
 
@@ -147,9 +142,9 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
             const { data, error } = await supabase
                 .from('exam_schedules')
                 .select(`
-                    *,
-                    exam_schedule_entries (*)
-                `)
+    *,
+    exam_schedule_entries(*)
+        `)
                 .eq('institution_id', user.institutionId)
                 .order('created_at', { ascending: false });
 
@@ -177,7 +172,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                     event: '*',
                     schema: 'public',
                     table: 'exam_schedules',
-                    filter: `institution_id=eq.${user.institutionId}`
+                    filter: `institution_id = eq.${user.institutionId} `
                 },
                 (payload) => {
                     console.log('Exam schedule changed:', payload);
@@ -223,7 +218,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                 .from('exam_schedules')
                 .insert({
                     institution_id: user.institutionId,
-                    class_id: selectedClass,
+                    class_id: classData.name,
                     section: selectedSection,
                     exam_type: selectedExamType.value,
                     exam_display_name: selectedExamType.label,
@@ -233,24 +228,194 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                 .select()
                 .single();
 
-            if (scheduleError) throw scheduleError;
+            if (scheduleError) {
+                console.error('Schedule Insertion Error:', scheduleError);
+                if (scheduleError.code === '23505') {
+                    throw new Error("A " + selectedExamType?.label + " schedule already exists for this class and section. Please delete the existing schedule before creating a new one.");
+                }
+                throw scheduleError;
+            }
 
-            // 2. Insert exam entries
+            if (!schedule?.id) {
+                throw new Error('Failed to retrieve the schedule ID.');
+            }
+
+            // 2. Insert new exam entries
+            const entriesToInsert = entries.map(entry => {
+                const ensureSeconds = (timeStr: string) => {
+                    if (!timeStr) return "00:00:00";
+                    if (timeStr.split(':').length === 2) return `${timeStr}:00`;
+                    return timeStr;
+                };
+
+                return {
+                    exam_schedule_id: schedule.id,
+                    exam_date: format(entry.exam_date, 'yyyy-MM-dd'),
+                    day_of_week: entry.day_of_week,
+                    start_time: ensureSeconds(entry.start_time),
+                    end_time: ensureSeconds(entry.end_time),
+                    subject: entry.subject,
+                    syllabus_notes: entry.syllabus_notes || '',
+                };
+            });
+
+            console.log('Inserting entries:', entriesToInsert);
+
             const { error: entriesError } = await supabase
                 .from('exam_schedule_entries')
-                .insert(
-                    entries.map(entry => ({
-                        exam_schedule_id: schedule.id,
-                        exam_date: format(entry.exam_date, 'yyyy-MM-dd'),
-                        day_of_week: entry.day_of_week,
-                        start_time: entry.start_time,
-                        end_time: entry.end_time,
-                        subject: entry.subject,
-                        syllabus_notes: entry.syllabus_notes,
-                    }))
-                );
+                .insert(entriesToInsert);
 
-            if (entriesError) throw entriesError;
+            if (entriesError) {
+                console.error('Entries Insertion Error:', entriesError);
+                throw entriesError;
+            }
+
+            // 3. Notify Students and Parents
+            try {
+                console.log('--- STARTING EXAM NOTIFICATIONS ---');
+                console.log(`Target: Class ${classData.name}, Section ${selectedSection} `);
+
+                // Get students - removed 'profile_id' which was causing the 400 error
+                // In this schema, student.id is the profile/user identifier
+                const { data: students, error: studentError } = await supabase
+                    .from('students')
+                    .select('id, email, parent_id')
+                    .ilike('class_name', classData.name)
+                    .eq('section', selectedSection)
+                    .eq('institution_id', user.institutionId);
+
+                if (studentError) {
+                    console.error('Error fetching students for notification:', studentError);
+                }
+
+                if (students && students.length > 0) {
+                    console.log(`Found ${students.length} students to notify: `, students);
+
+                    const notificationsToInsert: any[] = [];
+                    const timestamp = new Date().toISOString();
+
+                    // Resolve profile IDs for students (s.id is usually the profile ID, but we check profiles for consistency)
+                    const studentsNeedsProfile = students.filter(s => s.email);
+                    let profileMap = new Map<string, string>();
+
+                    if (studentsNeedsProfile.length > 0) {
+                        const emails = studentsNeedsProfile.map(s => s.email?.toLowerCase()).filter(Boolean);
+                        console.log('Resolving profiles for emails:', emails);
+                        const { data: profiles } = await supabase
+                            .from('profiles')
+                            .select('id, email')
+                            .in('email', emails);
+
+                        if (profiles) {
+                            profiles.forEach(p => {
+                                if (p.email) profileMap.set(p.email.toLowerCase(), p.id);
+                            });
+                        }
+                    }
+
+                    // Get parents through student_parents link table (CRITICAL: added student_id to select)
+                    const studentIds = students.map(s => s.id);
+                    const { data: parentLinks, error: parentError } = await supabase
+                        .from('student_parents')
+                        .select(`
+student_id,
+    parent_id,
+    parents!inner(
+        profile_id
+    )
+                        `)
+                        .in('student_id', studentIds);
+
+                    if (parentError) {
+                        console.error('Error fetching parent links:', parentError);
+                    }
+
+                    const parentProfileIdsByStudentId = new Map<string, string[]>();
+                    if (parentLinks) {
+                        console.log(`Found ${parentLinks.length} parent links via student_parents`);
+                        parentLinks.forEach((link: any) => {
+                            if (link.parents?.profile_id && link.student_id) {
+                                const list = parentProfileIdsByStudentId.get(link.student_id) || [];
+                                list.push(link.parents.profile_id);
+                                parentProfileIdsByStudentId.set(link.student_id, list);
+                            }
+                        });
+                    }
+
+                    students.forEach(s => {
+                        // Determine target student profile ID - use s.id as primary, lookup as fallback
+                        const studentEmail = s.email?.toLowerCase();
+                        const targetStudentProfileId = (studentEmail && profileMap.get(studentEmail)) || s.id;
+
+                        console.log(`Processing student ${s.email}: targetUserId = ${targetStudentProfileId} `);
+
+                        if (targetStudentProfileId) {
+                            notificationsToInsert.push({
+                                user_id: targetStudentProfileId,
+                                title: `${selectedExamType.label} Schedule Posted`,
+                                message: `The ${selectedExamType.label} timetable for Class ${classData.name} - ${selectedSection} has been published.`,
+                                type: 'exam',
+                                read: false,
+                                created_at: timestamp,
+                                action_url: '/student/timetable'
+                            });
+                        }
+
+                        // Collect all parent profile IDs for this student
+                        const parentProfileIds = new Set<string>();
+
+                        // 1. Direct parent_id from students table (usually points to profiles.id)
+                        if (s.parent_id) {
+                            parentProfileIds.add(s.parent_id);
+                            console.log(`Found direct parent_id for ${s.email}: ${s.parent_id} `);
+                        }
+
+                        // 2. Via student_parents link table
+                        const links = parentProfileIdsByStudentId.get(s.id);
+                        if (links) {
+                            links.forEach(id => {
+                                parentProfileIds.add(id);
+                                console.log(`Found linked parent via student_parents for ${s.email}: ${id} `);
+                            });
+                        }
+
+                        parentProfileIds.forEach(pProfileId => {
+                            notificationsToInsert.push({
+                                user_id: pProfileId,
+                                title: `${selectedExamType.label} for your child`,
+                                message: `The ${selectedExamType.label} timetable for your child in ${classData.name} - ${selectedSection} has been published.`,
+                                type: 'exam',
+                                read: false,
+                                created_at: timestamp,
+                                action_url: '/parent'
+                            });
+                        });
+                    });
+
+                    if (notificationsToInsert.length > 0) {
+                        const validNotifications = notificationsToInsert.filter(n => n.user_id);
+                        console.log(`Inserting ${validNotifications.length} notifications into database...`);
+
+                        const { error: insertError } = await supabase
+                            .from('notifications')
+                            .insert(validNotifications);
+
+                        if (insertError) {
+                            console.error('Error inserting notifications:', insertError);
+                        } else {
+                            console.log('Successfully inserted notifications!');
+                            toast.success(`Notifications sent to ${validNotifications.length} users`);
+                        }
+                    } else {
+                        console.warn('No notifications were prepared (zero recipients).');
+                    }
+                } else {
+                    console.warn(`No students found for Class: ${classData.name}, Section: ${selectedSection} `);
+                }
+            } catch (notifyErr: any) {
+                console.error('Exception in exam notifications logic:', notifyErr);
+            }
+            console.log('--- END EXAM NOTIFICATIONS ---');
 
             return schedule;
         },
@@ -262,7 +427,12 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
             setSelectedExamType(null);
         },
         onError: (error: any) => {
-            console.error('Error creating exam schedule:', error);
+            console.error('Detailed Error creating exam schedule:', {
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+                code: error.code
+            });
             toast.error(error.message || 'Failed to create exam schedule');
         },
     });
@@ -302,41 +472,41 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
             );
 
             const htmlContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>${schedule.exam_display_name} - Examination Schedule</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
-                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-                        .header h1 { margin: 0; font-size: 24px; color: #000; }
-                        .header p { margin: 5px 0; color: #666; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #f5f5f5; font-weight: bold; text-transform: uppercase; font-size: 12px; }
-                        td { font-size: 14px; }
-                        .subject { font-weight: bold; color: #2563eb; }
-                        .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
-                        @media print { body { padding: 20px; } .no-print { display: none; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h1>${schedule.exam_display_name} Examination Schedule</h1>
-                        <p>Class ${schedule.class_id} • Section ${schedule.section}</p>
-                        <p>Academic Year ${schedule.academic_year}</p>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date & Day</th>
-                                <th>Time</th>
-                                <th>Subject</th>
-                                <th>Syllabus / Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${entries.map((entry: any) => `
+    < !DOCTYPE html >
+        <html>
+            <head>
+                <title>${schedule.exam_display_name} - Examination Schedule</title>
+                <style>
+                    body {font - family: Arial, sans-serif; padding: 40px; color: #333; }
+                    .header {text - align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+                    .header h1 {margin: 0; font-size: 24px; color: #000; }
+                    .header p {margin: 5px 0; color: #666; }
+                    table {width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td {border: 1px solid #ddd; padding: 12px; text-align: left; }
+                    th {background - color: #f5f5f5; font-weight: bold; text-transform: uppercase; font-size: 12px; }
+                    td {font - size: 14px; }
+                    .subject {font - weight: bold; color: #2563eb; }
+                    .footer {margin - top: 40px; text-align: center; font-size: 12px; color: #666; }
+                    @media print {body {padding: 20px; } .no-print {display: none; } }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>${schedule.exam_display_name} Examination Schedule</h1>
+                    <p>Class ${schedule.class_id} • Section ${schedule.section}</p>
+                    <p>Academic Year ${schedule.academic_year}</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date & Day</th>
+                            <th>Time</th>
+                            <th>Subject</th>
+                            <th>Syllabus / Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${entries.map((entry: any) => `
                                 <tr>
                                     <td><strong>${format(new Date(entry.exam_date), 'dd MMM yyyy')}</strong><br><span style="color: #666;">${entry.day_of_week}</span></td>
                                     <td>${entry.start_time} - ${entry.end_time}</td>
@@ -344,19 +514,19 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                                     <td>${entry.syllabus_notes || 'No notes provided'}</td>
                                 </tr>
                             `).join('')}
-                        </tbody>
-                    </table>
-                    <div class="footer">
-                        <p>Total Exams: ${entries.length}</p>
-                        <p>Generated on ${format(new Date(), 'dd MMM yyyy, HH:mm')}</p>
-                    </div>
-                    <div class="no-print" style="margin-top: 20px; text-align: center;">
-                        <button onclick="window.print()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Print / Save as PDF</button>
-                        <button onclick="window.close()" style="padding: 10px 20px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin-left: 10px;">Close</button>
-                    </div>
-                </body>
-                </html>
-            `;
+                    </tbody>
+                </table>
+                <div class="footer">
+                    <p>Total Exams: ${entries.length}</p>
+                    <p>Generated on ${format(new Date(), 'dd MMM yyyy, HH:mm')}</p>
+                </div>
+                <div class="no-print" style="margin-top: 20px; text-align: center;">
+                    <button onclick="window.print()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Print / Save as PDF</button>
+                    <button onclick="window.close()" style="padding: 10px 20px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin-left: 10px;">Close</button>
+                </div>
+            </body>
+        </html>
+`;
 
             printWindow.document.write(htmlContent);
             printWindow.document.close();
@@ -373,9 +543,14 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
     };
 
     const handleManualSubmit = async (entries: ExamEntry[]) => {
-        setIsSubmitting(true);
-        await createScheduleMutation.mutateAsync(entries);
-        setIsSubmitting(false);
+        try {
+            setIsSubmitting(true);
+            await createScheduleMutation.mutateAsync(entries);
+        } catch (error) {
+            console.error('Mutation failed in handleManualSubmit:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleCancel = () => {
@@ -398,8 +573,25 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
     }
 
     // Show creation interface (Manual Entry Only)
-    if (isCreating && selectedExamType && selectedClass && selectedSection) {
+    if (isCreating && selectedClass && selectedSection) {
         const classData = classes.find(c => c.id === selectedClass);
+
+        if (!selectedExamType) {
+            return (
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <div>
+                            <CardTitle>Select Exam Type</CardTitle>
+                            <CardDescription>Choose the type of exam you want to schedule for {classData?.name} - {selectedSection}</CardDescription>
+                        </div>
+                        <Button variant="ghost" onClick={handleCancel}>Cancel</Button>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                        <ExamTypeSelector onSelect={handleExamTypeSelect} />
+                    </CardContent>
+                </Card>
+            );
+        }
 
         return (
             <Card>
@@ -426,68 +618,51 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
     // Show class and section selector
     return (
         <div className="space-y-6">
-            {/* Class and Section Selector */}
-            <Card>
+            {/* Fixed Class and Section Information */}
+            <Card className="bg-white shadow-sm border-border">
                 <CardContent className="p-6">
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h3 className="text-lg font-semibold mb-4">Select Class & Section</h3>
-                                <p className="text-sm text-muted-foreground mb-4">
-                                    Choose the class and section to create or view exam schedules
-                                </p>
-                            </div>
-                            <Button onClick={() => setShowHistory(true)} variant="outline">
-                                <History className="w-4 h-4 mr-2" />
-                                History
-                            </Button>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-2">
+                            <h3 className="text-2xl font-bold tracking-tight text-foreground">
+                                Exam Management
+                            </h3>
+                            <p className="text-sm text-muted-foreground max-w-md">
+                                Create, manage and track examination schedules for your assigned class and section.
+                            </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Class Selector */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Class</label>
-                                <Select
-                                    value={selectedClassName}
-                                    onValueChange={(val) => {
-                                        setSelectedClassName(val);
-                                        setSelectedSection('');
-                                        setSelectedClass('');
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select class" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {uniqueClassNames.map((name: string) => (
-                                            <SelectItem key={name} value={name}>
-                                                {name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                        <div className="flex flex-col md:flex-row items-center gap-4">
+                            <button
+                                onClick={() => setShowHistory(true)}
+                                className="flex items-center gap-3 bg-primary/5 text-primary px-6 py-3 rounded-2xl border border-primary/10 shadow-sm hover:bg-primary/10 hover:shadow-md transition-all group cursor-pointer"
+                            >
+                                <div className="p-2 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
+                                    <History className="h-5 w-5" />
+                                </div>
+                                <div className="flex flex-col text-left">
+                                    <span className="text-[10px] uppercase tracking-wider font-black opacity-60 leading-tight">Exam Records</span>
+                                    <span className="text-sm font-extrabold leading-none">See History</span>
+                                </div>
+                            </button>
 
-                            {/* Section Selector */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Section</label>
-                                <Select
-                                    value={selectedSection}
-                                    onValueChange={setSelectedSection}
-                                    disabled={!selectedClassName}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select section" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {availableSections.map((sec: string) => (
-                                            <SelectItem key={sec} value={sec}>
-                                                Section {sec}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                            {!selectedClassName || !selectedSection ? (
+                                <div className="flex items-center gap-3 bg-destructive/10 text-destructive px-5 py-2.5 rounded-xl border border-destructive/20 shadow-sm animate-pulse">
+                                    <Info className="h-5 w-5" />
+                                    <span className="text-sm font-bold">No class assigned to you</span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-3 bg-primary/10 text-primary px-6 py-3 rounded-2xl border border-primary/20 shadow-sm hover:shadow-md transition-all group">
+                                    <div className="p-2 bg-primary/20 rounded-full group-hover:bg-primary/30 transition-colors">
+                                        <Info className="h-5 w-5" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase tracking-wider font-black opacity-60 leading-tight">Your Assigned Class</span>
+                                        <span className="text-sm font-extrabold leading-none">
+                                            {selectedClassName} <span className="mx-1 text-primary/40">•</span> Section {selectedSection}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </CardContent>
@@ -502,7 +677,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold">Exam Schedules</h3>
-                                <Button onClick={() => setIsCreating(true)} size="sm">
+                                <Button onClick={() => { setSelectedExamType(null); setIsCreating(true); }} size="sm">
                                     <Plus className="w-4 h-4 mr-2" />
                                     Create New
                                 </Button>
@@ -574,54 +749,32 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
 
                     {!historyExamType ? (
                         <div className="space-y-4">
-                            <p className="text-sm text-muted-foreground">Select an exam type to view schedules</p>
-                            <div className="grid grid-cols-2 gap-3">
-                                {EXAM_TYPES.map((examType) => (
-                                    <Button
-                                        key={examType.value}
-                                        variant="outline"
-                                        onClick={() => setHistoryExamType(examType.value)}
-                                        className="justify-start h-auto p-4"
-                                    >
-                                        <div className="text-left">
-                                            <div className="font-semibold">{examType.label}</div>
-                                            <div className="text-xs text-muted-foreground">{examType.description}</div>
-                                        </div>
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-                    ) : !historyClass ? (
-                        <div className="space-y-4">
-                            <Button variant="ghost" onClick={() => setHistoryExamType('')} className="mb-2">
-                                ← Back to Exam Types
-                            </Button>
-                            <p className="text-sm text-muted-foreground">
-                                Select a class to view {EXAM_TYPES.find(t => t.value === historyExamType)?.label} schedules
-                            </p>
-                            <div className="grid grid-cols-3 gap-3">
-                                {classes.map((cls: any) => {
-                                    const hasSchedule = allExamSchedules.some(
-                                        (s: any) => s.exam_type === historyExamType && s.class_id === cls.id
+                            <p className="text-sm text-muted-foreground">Select an exam type to view history for {selectedClassName}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {EXAM_TYPES.map((examType) => {
+                                    const schedule = allExamSchedules.find(
+                                        (s: any) => s.exam_type === examType.value && s.class_id === selectedClassName && s.section === selectedSection
                                     );
                                     return (
                                         <Button
-                                            key={cls.id}
-                                            variant={hasSchedule ? "default" : "outline"}
+                                            key={examType.value}
+                                            variant={schedule ? "default" : "outline"}
                                             onClick={() => {
-                                                const schedule = allExamSchedules.find(
-                                                    (s: any) => s.exam_type === historyExamType && s.class_id === cls.id
-                                                );
                                                 if (schedule) {
-                                                    setHistoryClass(cls.id);
+                                                    setHistoryExamType(examType.value);
+                                                    setHistoryClass(selectedClass);
                                                     handleViewHistory(schedule);
                                                 } else {
-                                                    toast.info(`No ${EXAM_TYPES.find(t => t.value === historyExamType)?.label} schedule for ${cls.name}`);
+                                                    toast.info("No " + examType.label + " schedule found for your class");
                                                 }
                                             }}
-                                            className="h-auto p-4"
+                                            className="justify-start h-auto p-4"
                                         >
-                                            {cls.name}
+                                            <div className="text-left">
+                                                <div className="font-semibold">{examType.label}</div>
+                                                <div className="text-xs opacity-80">{examType.description}</div>
+                                                {schedule && <div className="text-[10px] mt-1 font-bold">Available - Click to view</div>}
+                                            </div>
                                         </Button>
                                     );
                                 })}
@@ -630,11 +783,23 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                     ) : historySchedule ? (
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
-                                <Button variant="ghost" onClick={() => { setHistoryClass(''); setHistorySchedule(null); }}>
-                                    ← Back to Classes
+                                <Button variant="ghost" onClick={() => { setHistoryExamType(''); setHistoryClass(''); setHistorySchedule(null); }}>
+                                    ← Back to Exam Types
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={() => setShowHistory(false)}>
-                                    <X className="w-4 h-4" />
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                        if (confirm('Are you sure you want to delete this exam schedule? This action cannot be undone.')) {
+                                            handleDelete(historySchedule.id);
+                                            setShowHistory(false);
+                                            setHistoryExamType('');
+                                            setHistorySchedule(null);
+                                        }
+                                    }}
+                                >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Delete Schedule
                                 </Button>
                             </div>
                             <ExamSchedulePreview
@@ -642,7 +807,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
                                     id: historySchedule.id,
                                     exam_type: historySchedule.exam_type,
                                     exam_display_name: historySchedule.exam_display_name,
-                                    class_id: classes.find((c: any) => c.id === historySchedule.class_id)?.name || '',
+                                    class_id: historySchedule.class_id,
                                     section: historySchedule.section,
                                     academic_year: historySchedule.academic_year,
                                     entries: historySchedule.exam_schedule_entries.map((e: any) => ({
