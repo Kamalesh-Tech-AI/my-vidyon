@@ -14,7 +14,7 @@ export function CanteenLayout({ children }: { children: ReactNode }) {
     return (
         <div className="min-h-screen bg-background">
             {/* Top Bar */}
-            <header className="h-16 bg-card/80 backdrop-blur-md border-b border-border fixed top-0 left-0 right-0 z-50 px-4 md:px-8 flex items-center justify-between">
+            <header className="h-16 bg-card/80 backdrop-blur-md border-b border-border fixed top-0 left-0 right-0 z-50 px-4 md:px-8 flex items-center justify-between safe-area-inset-top">
                 <div className="flex items-center gap-2 md:gap-3">
                     <img src="/my-vidyon-logo.png" alt="Vidyon Logo" className="h-12 md:h-16 w-auto" />
                     <div className="hidden xs:block">
@@ -29,7 +29,7 @@ export function CanteenLayout({ children }: { children: ReactNode }) {
                     </div>
                     <RealtimeNotificationBell />
 
-                    <Link to="/canteen/settings" className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l border-border hover:bg-muted/50 transition-colors rounded-r-lg -mr-4 pr-4 py-1">
+                    <Link to="/canteen/settings" className="flex items-center gap-2 md:gap-3 pl-2 md:pl-4 border-l border-border hover:bg-muted/50 transition-colors rounded-r-lg -mr-4 pr-4 py-1 touch-active no-select">
                         <div className="text-right hidden md:block">
                             <p className="text-sm font-bold leading-none">{user.name}</p>
                             <p className="text-[10px] text-muted-foreground mt-1">Canteen Manager</p>
@@ -40,7 +40,7 @@ export function CanteenLayout({ children }: { children: ReactNode }) {
                     </Link>
                     <button
                         onClick={() => logout()}
-                        className="p-1.5 md:p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        className="p-1.5 md:p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors touch-active no-select"
                         title="Logout"
                     >
                         <LogOut className="w-4 h-4 md:w-5 md:h-5" />
@@ -50,7 +50,7 @@ export function CanteenLayout({ children }: { children: ReactNode }) {
 
             {/* Main Content */}
             <main className="pt-16 min-h-screen">
-                <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                <div className="px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-10 max-w-7xl mx-auto safe-area-inset w-full max-w-full overflow-x-hidden">
                     {children}
                 </div>
             </main>

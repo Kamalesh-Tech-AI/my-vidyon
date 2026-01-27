@@ -1,4 +1,5 @@
 import { FacultyLayout } from '@/layouts/FacultyLayout';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
 import { CourseCard } from '@/components/cards/CourseCard';
@@ -14,6 +15,7 @@ import {
   Plus,
   Calendar,
   Clock,
+  Settings,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -44,6 +46,82 @@ export function FacultyDashboard() {
         title={`Good morning, ${user?.name?.split(' ')[0] || 'Faculty'}!`}
         subtitle="Manage your courses and track student progress"
       />
+
+      {/* MyGate-style Shortcuts */}
+      <section className="mb-8">
+        <h3 className="text-lg font-bold mb-4 px-1">Quick Tools</h3>
+        <div className="shortcut-grid">
+          <Link to="/faculty/attendance" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-blue-100 text-blue-600">
+              <UserCheck className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Attendance</span>
+          </Link>
+          <Link to="/faculty/timetable" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-purple-100 text-purple-600">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Timetable</span>
+          </Link>
+          <Link to="/faculty/assignments" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-orange-100 text-orange-600">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Assignments</span>
+          </Link>
+          <Link to="/faculty/marks" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-green-100 text-green-600">
+              <FileCheck className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Marks</span>
+          </Link>
+          <Link to="/faculty/students" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-red-100 text-red-600">
+              <Users className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Students</span>
+          </Link>
+          <Link to="/faculty/leave" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-indigo-100 text-indigo-600">
+              <Clock className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Leave</span>
+          </Link>
+          <Link to="/faculty/announcements" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-yellow-100 text-yellow-600">
+              <Plus className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Announcements</span>
+          </Link>
+          <Link to="/faculty/settings" className="shortcut-card">
+            <div className="shortcut-icon-wrapper bg-gray-100 text-gray-600">
+              <Settings className="w-6 h-6" />
+            </div>
+            <span className="shortcut-label">Settings</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* Native Ad / Announcement */}
+      <section className="native-ad-card shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
+        <div className="native-ad-badge">Staff Update</div>
+        <div className="native-ad-content">
+          <div className="native-ad-image-container relative">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-faculty to-blue-400 flex items-center justify-center text-white shadow-inner">
+              <Users className="w-10 h-10" />
+            </div>
+          </div>
+          <div className="native-ad-text">
+            <h4 className="native-ad-title">New Academic Calendar Published!</h4>
+            <p className="native-ad-description">
+              The updated academic calendar for the upcoming semester is now available. Please review the important dates and events.
+            </p>
+            <div className="mt-2 flex items-center gap-2 text-faculty font-bold text-xs">
+              View Calendar <Calendar className="w-3 h-3" />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Stats Grid - Real-time Data */}
       <div className="stats-grid mb-6 sm:mb-8">

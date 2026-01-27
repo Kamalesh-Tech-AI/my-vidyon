@@ -22,6 +22,82 @@ export function ParentDashboard() {
                 subtitle="Monitor your children's progress"
             />
 
+            {/* MyGate-style Shortcuts */}
+            <section className="mb-8 mt-6">
+                <h3 className="text-lg font-bold mb-4 px-1">Quick Services</h3>
+                <div className="shortcut-grid">
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-blue-100 text-blue-600">
+                            <User className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Children</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-green-100 text-green-600">
+                            <CreditCard className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Pay Fees</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-purple-100 text-purple-600">
+                            <Calendar className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Leave App</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-orange-100 text-orange-600">
+                            <Clock className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Attendance</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-red-100 text-red-600">
+                            <Shield className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Security</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-indigo-100 text-indigo-600">
+                            <School className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">School Info</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-yellow-100 text-yellow-600">
+                            <AlertCircle className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Emergency</span>
+                    </button>
+                    <button className="shortcut-card">
+                        <div className="shortcut-icon-wrapper bg-gray-100 text-gray-600">
+                            <User className="w-6 h-6" />
+                        </div>
+                        <span className="shortcut-label">Settings</span>
+                    </button>
+                </div>
+            </section>
+
+            {/* Native Ad / Announcement */}
+            <section className="native-ad-card shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
+                <div className="native-ad-badge">Recommended</div>
+                <div className="native-ad-content">
+                    <div className="native-ad-image-container relative">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-orange-400 to-red-500 flex items-center justify-center text-white shadow-inner">
+                            <CreditCard className="w-10 h-10" />
+                        </div>
+                    </div>
+                    <div className="native-ad-text">
+                        <h4 className="native-ad-title">Pay Fees Online & Get Rewards!</h4>
+                        <p className="native-ad-description">
+                            Pay your children's tuition fees before the end of this month to earn Vidyon Points and exclusive school partner vouchers.
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 text-primary font-bold text-xs">
+                            Pay Now <CreditCard className="w-3 h-3" />
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             {/* Children Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4 sm:mt-6 mb-8">
                 {children.length > 0 ? (

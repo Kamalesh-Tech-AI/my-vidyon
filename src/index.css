@@ -141,6 +141,14 @@
     @apply font-semibold tracking-tight;
   }
 
+  /* Safe Area Utilities */
+  :root {
+    --sat: env(safe-area-inset-top);
+    --sar: env(safe-area-inset-right);
+    --sab: env(safe-area-inset-bottom);
+    --sal: env(safe-area-inset-left);
+  }
+
   /* ========================================
      CUSTOM MEDIA QUERIES
      ======================================== */
@@ -470,7 +478,53 @@
 
   /* Active state for touch devices */
   .touch-active {
-    @apply active:scale-[0.98] active:opacity-90 transition-transform;
+    @apply active:scale-[0.96] active:opacity-90 transition-all duration-150;
+  }
+
+  /* MyGate-style Shortcut Grid */
+  .shortcut-grid {
+    @apply grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4;
+  }
+
+  .shortcut-card {
+    @apply flex flex-col items-center justify-center gap-2 p-2 rounded-2xl bg-card border border-border/50 shadow-sm transition-all hover:shadow-md no-select touch-active;
+  }
+
+  .shortcut-icon-wrapper {
+    @apply w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-colors;
+  }
+
+  .shortcut-label {
+    @apply text-[10px] sm:text-xs font-medium text-center leading-tight;
+  }
+
+  /* Native-looking Advertisement/Announcement Card */
+  .native-ad-card {
+    @apply relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/10 via-background to-accent/20 border border-primary/20 p-4 sm:p-6 mb-6;
+  }
+
+  .native-ad-badge {
+    @apply absolute top-3 right-3 px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[8px] font-bold uppercase tracking-wider;
+  }
+
+  .native-ad-content {
+    @apply flex flex-col sm:flex-row items-center gap-4 sm:gap-6;
+  }
+
+  .native-ad-image {
+    @apply w-16 h-16 sm:w-24 sm:h-24 rounded-xl object-cover shadow-sm bg-primary/10;
+  }
+
+  .native-ad-text {
+    @apply flex-1 text-center sm:text-left;
+  }
+
+  .native-ad-title {
+    @apply text-base sm:text-lg font-bold text-foreground mb-1;
+  }
+
+  .native-ad-description {
+    @apply text-xs sm:text-sm text-muted-foreground line-clamp-2;
   }
 }
 
@@ -671,7 +725,12 @@
   a,
   input[type="checkbox"],
   input[type="radio"] {
-    @apply min-h-[36px] min-w-[36px];
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Global Soft Touch Feedback */
+  .btn-soft-touch {
+    @apply transition-transform active:scale-95 duration-150;
   }
 }
 

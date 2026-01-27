@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { User, UserRole, AuthState, LoginCredentials, ROLE_ROUTES } from '@/types/auth';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timed out after 15 seconds')), 15000)
+        setTimeout(() => reject(new Error('Profile fetch timed out after 30 seconds')), 30000)
       );
 
       const profileFetchPromise = (async () => {
@@ -178,134 +178,107 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const userRef = useRef(state.user);
   useEffect(() => {
-    // Safety check for unconfigured Supabase
+    userRef.current = state.user;
+  }, [state.user]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured()) {
       setState(prev => ({ ...prev, isLoading: false }));
       return;
     }
 
-    // Check active session
-    const initAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+    let isInitialLoad = true;
 
-        if (error) throw error;
+    // Listen for auth changes and handle initial session
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`🔄 [AUTH] Event: ${event}`);
 
-        if (session) {
-          console.log('🔄 [AUTH] Session found, verifying user profile and institution status...');
+      if (session) {
+        // If we already have the same user and it's just a token refresh (not SIGNED_IN), 
+        // we can skip the heavy profile fetch to avoid transient network issues logging the user out.
+        if (userRef.current?.id === session.user.id && event !== 'SIGNED_IN' && !isInitialLoad) {
+          console.log('[AUTH] Token refresh for same user, skipping profile fetch');
+          return;
+        }
 
-          try {
-            const user = await fetchUserProfile(session.user.id, session.user.email!);
+        try {
+          if (isInitialLoad) {
+            setState(prev => ({ ...prev, isLoading: true }));
+          }
 
-            if (user) {
-              setState({
-                user,
-                isAuthenticated: true,
-                isLoading: false,
-              });
-            } else {
-              // Profile not found, sign out
-              await supabase.auth.signOut();
+          const user = await fetchUserProfile(session.user.id, session.user.email!);
+
+          if (user) {
+            setState({
+              user,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+          } else {
+            // Profile explicitly not found in DB
+            console.error('🚫 [AUTH] Profile not found - signing out');
+            await supabase.auth.signOut();
+            setState({ user: null, isAuthenticated: false, isLoading: false });
+          }
+        } catch (error: any) {
+          const isBlockingError = ['INSTITUTION_INACTIVE', 'INSTITUTION_DELETED', 'USER_DISABLED'].includes(error.message);
+
+          if (isBlockingError) {
+            console.error('🚫 [AUTH] Blocking error - signing out:', error.message);
+            await supabase.auth.signOut();
+            setState({ user: null, isAuthenticated: false, isLoading: false });
+
+            toast.error('Access Denied', {
+              description: error.message === 'USER_DISABLED'
+                ? 'Your account has been disabled.'
+                : error.message === 'INSTITUTION_INACTIVE'
+                  ? 'Your institution has been deactivated.'
+                  : 'Your institution has been deleted.',
+            });
+          } else {
+            // Transient error (timeout/network)
+            console.warn('⚠️ [AUTH] Transient auth error (not signing out):', error);
+            // If it's the initial load and it failed, we MUST stop loading
+            if (isInitialLoad) {
               setState(prev => ({ ...prev, isLoading: false }));
             }
-          } catch (error: any) {
-            // If institution is inactive or user is disabled, sign out the user
-            if (error.message === 'INSTITUTION_INACTIVE' || error.message === 'INSTITUTION_DELETED' || error.message === 'USER_DISABLED') {
-              console.error('🚫 [AUTH] Institution is inactive/deleted or user is disabled - signing out user');
-              await supabase.auth.signOut();
-              setState({
-                user: null,
-                isAuthenticated: false,
-                isLoading: false,
-              });
-              toast.error('Access Denied', {
-                description: error.message === 'USER_DISABLED'
-                  ? 'Your account has been disabled. Please contact your administrator.'
-                  : error.message === 'INSTITUTION_INACTIVE'
-                    ? 'Your institution has been deactivated. Please contact your administrator.'
-                    : 'Your institution has been deleted. Please contact support.',
-              });
-            } else {
-              throw error;
-            }
           }
-        } else {
-          setState(prev => ({ ...prev, isLoading: false }));
         }
-      } catch (err) {
-        console.error("Auth initialization error:", err);
-        // Ensure loading state is cleared even on error
-        setState(prev => ({ ...prev, isLoading: false }));
-      }
-    };
-
-    initAuth();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        try {
-          // Wrapped in timeout to prevent hangs
-          const userPromise = fetchUserProfile(session.user.id, session.user.email!);
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Profile fetch timed out')), 15000)
-          );
-
-          const user = await Promise.race([userPromise, timeoutPromise]) as any;
-
-          setState({
-            user,
-            isAuthenticated: !!user,
-            isLoading: false,
-          });
-        } catch (err) {
-          console.error('[AUTH] Auto-signin profile fetch failed:', err);
-          setState(prev => ({ ...prev, isLoading: false }));
-        }
-      } else if (event === 'SIGNED_OUT') {
+      } else {
+        // No session
         setState({
           user: null,
           isAuthenticated: false,
           isLoading: false,
         });
       }
+
+      isInitialLoad = false;
     });
 
-    // Periodic institution status check for logged-in users
-    let statusCheckInterval: NodeJS.Timeout | null = null;
-
-    const checkInstitutionStatus = async () => {
+    // Sub-periodic check for institution status (optional, but keep it robust)
+    const statusCheckInterval = setInterval(async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session || !userRef.current) return;
 
       try {
-        const user = await fetchUserProfile(session.user.id, session.user.email!);
-        // If fetchUserProfile throws INSTITUTION_INACTIVE, it will be caught below
+        // Use a silent fetch that doesn't trigger global loading or aggressive error handling
+        await fetchUserProfile(session.user.id, session.user.email!);
       } catch (error: any) {
-        if (error.message === 'INSTITUTION_INACTIVE' || error.message === 'INSTITUTION_DELETED' || error.message === 'USER_DISABLED') {
-          console.error('🚫 [AUTH] Institution status changed or user disabled - logging out user');
+        if (['INSTITUTION_INACTIVE', 'INSTITUTION_DELETED', 'USER_DISABLED'].includes(error.message)) {
+          console.error('🚫 [AUTH] Mid-session block detected');
           await supabase.auth.signOut();
-          setState({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-          toast.error('Session Expired', {
-            description: error.message === 'USER_DISABLED'
-              ? 'Your account has been disabled. You have been logged out.'
-              : 'Your institution has been deactivated. You have been logged out.',
-          });
+          setState({ user: null, isAuthenticated: false, isLoading: false });
+          toast.error('Session Expired', { description: 'Your access has been revoked.' });
         }
       }
-    };
-
-    // Check institution status every 30 seconds for logged-in users
-    statusCheckInterval = setInterval(checkInstitutionStatus, 30000);
+    }, 60000); // Reduce frequency to once per minute
 
     return () => {
       subscription.unsubscribe();
-      if (statusCheckInterval) clearInterval(statusCheckInterval);
+      clearInterval(statusCheckInterval);
     };
   }, [fetchUserProfile]);
 

@@ -357,7 +357,7 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
         // Responsive Padding Logic:
         // Mobile: Bottom Nav (h-16) + Buffer (h-8) + Safe Area.
         // Desktop (lg): No bottom padding required (Bottom Nav hidden).
-        isBottomNavRole && 'pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0'
+        isBottomNavRole && 'pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] lg:pb-0'
       )}>
         {/* Desktop Header */}
         <header className="hidden lg:flex h-16 bg-card border-b border-border items-center justify-between px-8">
@@ -399,7 +399,7 @@ export function DashboardLayout({ children, navItems, roleColor = 'text-primary'
         </header>
 
         {/* Page Content */}
-        <div className="px-3 py-4 sm:px-4 sm:py-6 lg:px-8 lg:py-8 safe-area-inset w-full max-w-full overflow-x-hidden">
+        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10 safe-area-inset w-full max-w-full overflow-x-hidden">
           {children}
         </div>
       </main>
