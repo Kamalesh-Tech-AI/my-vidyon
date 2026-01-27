@@ -26,7 +26,7 @@ interface Notification {
     id: string;
     title: string;
     message: string;
-    type: 'info' | 'success' | 'warning' | 'error';
+    type: 'info' | 'success' | 'warning' | 'error' | 'attendance';
     timestamp: number;
     read: boolean;
     table?: string;
@@ -359,7 +359,7 @@ export function RealtimeNotificationBell() {
                     id: payload.new.id || Date.now().toString(),
                     title: payload.new.title,
                     message: payload.new.message,
-                    type: (payload.new.type === 'error' || payload.new.type === 'warning' || payload.new.type === 'success') ? payload.new.type : 'info',
+                    type: (payload.new.type === 'error' || payload.new.type === 'warning' || payload.new.type === 'success' || payload.new.type === 'attendance') ? payload.new.type : 'info',
                     timestamp: Date.now(),
                     read: false,
                     table: 'notifications',
@@ -411,6 +411,12 @@ export function RealtimeNotificationBell() {
             else if (user?.role === 'student') navigate('/student/calendar');
             else if (user?.role === 'parent') navigate('/parent/calendar');
             else navigate('/faculty/calendar');
+        } else if (notification.type === 'attendance') {
+            // Special routing for attendance violations
+            if (user?.role === 'parent') navigate('/parent');
+            else if (user?.role === 'student') navigate('/student/attendance');
+            else if (user?.role === 'faculty') navigate('/faculty/attendance');
+            else navigate('/institution/dashboard');
         }
     };
 
