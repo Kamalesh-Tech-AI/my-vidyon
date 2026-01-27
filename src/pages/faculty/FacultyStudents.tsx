@@ -3,7 +3,7 @@ import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { Button } from '@/components/ui/button';
-import { Search, Mail, Phone, Loader2 } from 'lucide-react';
+import { Search, Mail, Phone, Loader2, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -124,7 +124,7 @@ export function FacultyStudents() {
         {
             key: 'contact',
             header: 'Contact',
-            render: (item: any) => item.phone || 'N/A'
+            render: (item: any) => item.parent_phone || item.phone || 'N/A'
         },
         {
             key: 'actions',
@@ -134,13 +134,34 @@ export function FacultyStudents() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => window.location.href = `mailto:${item.email}`}
-                        title="Send Email"
+                        className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                        onClick={() => {
+                            const phone = item.parent_phone || item.phone;
+                            if (phone) {
+                                const cleanPhone = phone.replace(/[^\d]/g, '');
+                                window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                            } else {
+                                toast.error('No contact number available');
+                            }
+                        }}
+                        title="Message on WhatsApp"
                     >
-                        <Mail className="h-4 w-4" />
+                        <MessageCircle className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        onClick={() => {
+                            const phone = item.parent_phone || item.phone;
+                            if (phone) {
+                                window.location.href = `tel:${phone}`;
+                            } else {
+                                toast.error('No contact number available');
+                            }
+                        }}
+                        title="Call Parent"
+                    >
                         <Phone className="h-4 w-4" />
                     </Button>
                     <Button

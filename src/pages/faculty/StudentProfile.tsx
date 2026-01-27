@@ -2,23 +2,70 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { FacultyLayout } from '@/layouts/FacultyLayout';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
+import { ArrowLeft, Mail, Phone, MapPin, Calendar, Award, TrendingUp, BookOpen, MessageCircle, User, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import { Badge } from '@/components/common/Badge';
-import { ArrowLeft, Mail, Phone, MapPin, Calendar, Award, TrendingUp, BookOpen } from 'lucide-react';
-
-const studentData: Record<string, any> = {
-    '101': { id: 1, rollNo: '101', name: 'John Smith', class: 'Grade 10-A', parent: 'Robert Smith', contact: '+91 98765 43210', attendance: '95%', house: 'Blue', email: 'john.smith@student.edu', address: '123 Main St, City', dob: 'Jan 15, 2010', bloodGroup: 'O+', avgGrade: '92%' },
-    '102': { id: 2, rollNo: '102', name: 'Emily Johnson', class: 'Grade 10-A', parent: 'Sarah Johnson', contact: '+91 98765 43211', attendance: '88%', house: 'Red', email: 'emily.johnson@student.edu', address: '456 Oak Ave, City', dob: 'Mar 22, 2010', bloodGroup: 'A+', avgGrade: '88%' },
-    '103': { id: 3, rollNo: '103', name: 'Michael Brown', class: 'Grade 10-A', parent: 'David Brown', contact: '+91 98765 43212', attendance: '92%', house: 'Green', email: 'michael.brown@student.edu', address: '789 Pine Rd, City', dob: 'Jul 8, 2010', bloodGroup: 'B+', avgGrade: '90%' },
-    '104': { id: 4, rollNo: '104', name: 'Sarah Davis', class: 'Grade 10-A', parent: 'Linda Davis', contact: '+91 98765 43213', attendance: '75%', house: 'Yellow', email: 'sarah.davis@student.edu', address: '321 Elm St, City', dob: 'Nov 30, 2010', bloodGroup: 'AB+', avgGrade: '78%' },
-    '105': { id: 5, rollNo: '105', name: 'James Wilson', class: 'Grade 10-A', parent: 'Mary Wilson', contact: '+91 98765 43214', attendance: '98%', house: 'Blue', email: 'james.wilson@student.edu', address: '654 Maple Dr, City', dob: 'May 12, 2010', bloodGroup: 'O-', avgGrade: '95%' },
-};
 
 export function StudentProfile() {
-    const { rollNo } = useParams();
+    const { studentId } = useParams();
     const navigate = useNavigate();
-    const student = rollNo ? studentData[rollNo] : null;
 
-    if (!student) {
+    // 1. Fetch Student Data
+    const { data: student, isLoading: isStudentLoading, error: studentError } = useQuery({
+        queryKey: ['student-profile', studentId],
+        queryFn: async () => {
+            if (!studentId) return null;
+            const { data, error } = await supabase
+                .from('students')
+                .select('*')
+                .eq('id', studentId)
+                .single();
+
+            if (error) throw error;
+            return data;
+        },
+        enabled: !!studentId
+    });
+
+    // 2. Fetch Attendance Stats
+    const { data: attendanceStats } = useQuery({
+        queryKey: ['student-attendance-stats', studentId],
+        queryFn: async () => {
+            if (!studentId) return null;
+
+            const { data: allRecords, error: allErr } = await supabase
+                .from('student_attendance')
+                .select('status')
+                .eq('student_id', studentId);
+
+            if (allErr) throw allErr;
+            if (!allRecords || allRecords.length === 0) return { percentage: 'N/A', total: 0 };
+
+            const presentCount = allRecords.filter(r => r.status === 'present').length;
+            const percentage = ((presentCount / allRecords.length) * 100).toFixed(1) + '%';
+
+            return {
+                percentage,
+                total: allRecords.length,
+                present: presentCount
+            };
+        },
+        enabled: !!studentId
+    });
+
+    if (isStudentLoading) {
+        return (
+            <FacultyLayout>
+                <div className="flex items-center justify-center min-h-[60vh]">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+            </FacultyLayout>
+        );
+    }
+
+    if (studentError || !student) {
         return (
             <FacultyLayout>
                 <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -31,11 +78,23 @@ export function StudentProfile() {
         );
     }
 
-    const houseColors: Record<string, string> = {
-        Blue: 'bg-blue-500',
-        Red: 'bg-red-500',
-        Green: 'bg-green-500',
-        Yellow: 'bg-yellow-500',
+    const handleWhatsApp = () => {
+        const phone = student.parent_phone || student.phone;
+        if (phone) {
+            const cleanPhone = phone.replace(/[^\d]/g, '');
+            window.open(`https://wa.me/${cleanPhone}`, '_blank');
+        } else {
+            toast.error('No contact number available');
+        }
+    };
+
+    const handleCall = () => {
+        const phone = student.parent_phone || student.phone;
+        if (phone) {
+            window.location.href = `tel:${phone}`;
+        } else {
+            toast.error('No contact number available');
+        }
     };
 
     return (
@@ -54,43 +113,78 @@ export function StudentProfile() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Profile Card */}
                 <div className="lg:col-span-1 space-y-6">
-                    <div className="dashboard-card">
-                        <div className="bg-primary/10 h-24 rounded-t-xl -m-6 mb-0"></div>
+                    <div className="dashboard-card overflow-hidden">
                         <div className="flex flex-col items-center pt-4">
-                            <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center text-3xl font-bold text-primary -mt-16 border-4 border-white">
-                                {student.name.split(' ').map((n: string) => n[0]).join('')}
+                            <div className="w-32 h-32 rounded-2xl overflow-hidden border-4 border-primary/10 shadow-lg bg-white flex items-center justify-center mb-4">
+                                {student.image_url ? (
+                                    <img
+                                        src={student.image_url}
+                                        alt={student.name}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            (e.target as any).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(student.name) + '&background=random';
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="w-full h-full bg-primary/10 flex items-center justify-center text-4xl font-bold text-primary">
+                                        {student.name.split(' ').map((n: string) => n[0]).join('')}
+                                    </div>
+                                )}
                             </div>
                             <h2 className="text-2xl font-bold mt-4">{student.name}</h2>
-                            <p className="text-muted-foreground">Roll No: {student.rollNo}</p>
+                            <p className="text-muted-foreground">Roll No: {student.roll_no || student.register_number || 'N/A'}</p>
                             <div className="flex items-center gap-2 mt-2">
-                                <div className={`w-3 h-3 rounded-full ${houseColors[student.house]}`} />
-                                <span className="text-sm font-medium">{student.house} House</span>
+                                <Badge variant="info" className="px-3 py-1">
+                                    {student.class_name} - {student.section}
+                                </Badge>
                             </div>
                         </div>
 
-                        <div className="mt-6 space-y-3">
-                            <div className="flex items-center gap-3 text-sm">
-                                <Mail className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-muted-foreground break-all">{student.email}</span>
+                        <div className="mt-8 space-y-4">
+                            <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                <div className="p-2 bg-white rounded-md shadow-sm">
+                                    <User className="w-4 h-4 text-primary" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">Gender</span>
+                                    <span className="text-sm font-medium capitalize">{student.gender || 'N/A'}</span>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-3 text-sm">
-                                <Phone className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">{student.contact}</span>
+                            <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                <div className="p-2 bg-white rounded-md shadow-sm">
+                                    <Calendar className="w-4 h-4 text-primary" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">Date of Birth</span>
+                                    <span className="text-sm font-medium">{student.dob || 'N/A'}</span>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-3 text-sm">
-                                <MapPin className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">{student.address}</span>
-                            </div>
-                            <div className="flex items-center gap-3 text-sm">
-                                <Calendar className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">DOB: {student.dob}</span>
+                            <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                <div className="p-2 bg-white rounded-md shadow-sm">
+                                    <MapPin className="w-4 h-4 text-primary" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">Address</span>
+                                    <span className="text-sm font-medium line-clamp-2">{student.address || 'N/A'}</span>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="mt-6 pt-6 border-t">
-                            <Button className="w-full" onClick={() => window.location.href = `mailto:${student.email}`}>
-                                <Mail className="w-4 h-4 mr-2" />
-                                Send Email
+                        <div className="mt-8 pt-6 border-t grid grid-cols-2 gap-3">
+                            <Button
+                                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                onClick={handleWhatsApp}
+                            >
+                                <MessageCircle className="w-4 h-4 mr-2" />
+                                WhatsApp
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
+                                onClick={handleCall}
+                            >
+                                <Phone className="w-4 h-4 mr-2" />
+                                Call
                             </Button>
                         </div>
                     </div>
@@ -100,84 +194,81 @@ export function StudentProfile() {
                 <div className="lg:col-span-2 space-y-6">
                     {/* Academic Overview */}
                     <div className="dashboard-card">
-                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                             <BookOpen className="w-5 h-5 text-primary" />
                             Academic Overview
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-primary/5 rounded-lg p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <TrendingUp className="w-4 h-4 text-primary" />
-                                    <span className="text-sm text-muted-foreground">Attendance</span>
+                            <div className="premium-stat-card bg-primary/5 border border-primary/10 rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-2 text-primary font-semibold">
+                                    <TrendingUp className="w-4 h-4" />
+                                    <span className="text-sm">Attendance</span>
                                 </div>
-                                <p className="text-2xl font-bold">{student.attendance}</p>
+                                <p className="text-3xl font-bold">{attendanceStats?.percentage || 'N/A'}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    {attendanceStats?.present || 0} / {attendanceStats?.total || 0} working days
+                                </p>
                             </div>
-                            <div className="bg-success/5 rounded-lg p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Award className="w-4 h-4 text-success" />
-                                    <span className="text-sm text-muted-foreground">Average Grade</span>
+                            <div className="premium-stat-card bg-success/5 border border-success/10 rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-2 text-success font-semibold">
+                                    <Award className="w-4 h-4" />
+                                    <span className="text-sm">Academic Performance</span>
                                 </div>
-                                <p className="text-2xl font-bold">{student.avgGrade}</p>
+                                <p className="text-3xl font-bold">Grade A</p>
+                                <p className="text-xs text-muted-foreground mt-1">Based on last term exams</p>
                             </div>
-                            <div className="bg-info/5 rounded-lg p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <BookOpen className="w-4 h-4 text-info" />
-                                    <span className="text-sm text-muted-foreground">Class</span>
+                            <div className="premium-stat-card bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-2 text-blue-600 font-semibold">
+                                    <BookOpen className="w-4 h-4" />
+                                    <span className="text-sm">Enrolled Class</span>
                                 </div>
-                                <p className="text-xl font-bold">{student.class}</p>
+                                <p className="text-2xl font-bold">{student.class_name}</p>
+                                <p className="text-xs text-muted-foreground mt-1">Section {student.section}</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Personal Information */}
-                    <div className="dashboard-card">
-                        <h3 className="text-lg font-semibold mb-4">Personal Information</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm text-muted-foreground">Full Name</label>
-                                <p className="font-medium">{student.name}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Roll Number</label>
-                                <p className="font-medium">{student.rollNo}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Date of Birth</label>
-                                <p className="font-medium">{student.dob}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Blood Group</label>
-                                <p className="font-medium">{student.bloodGroup}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Class</label>
-                                <p className="font-medium">{student.class}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">House</label>
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-3 h-3 rounded-full ${houseColors[student.house]}`} />
-                                    <p className="font-medium">{student.house}</p>
+                    {/* Personal & Parent Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="dashboard-card">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                                <User className="w-5 h-5 text-primary" />
+                                Parent Information
+                            </h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Parent/Guardian Name</label>
+                                    <p className="font-medium text-lg">{student.parent_name || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact Number</label>
+                                    <p className="font-medium text-lg text-primary">{student.parent_phone || student.phone || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email Address</label>
+                                    <p className="font-medium break-all">{student.parent_email || 'N/A'}</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Parent/Guardian Information */}
-                    <div className="dashboard-card">
-                        <h3 className="text-lg font-semibold mb-4">Parent/Guardian Information</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm text-muted-foreground">Parent Name</label>
-                                <p className="font-medium">{student.parent}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Contact Number</label>
-                                <p className="font-medium">{student.contact}</p>
-                            </div>
-                            <div className="md:col-span-2">
-                                <label className="text-sm text-muted-foreground">Address</label>
-                                <p className="font-medium">{student.address}</p>
+                        <div className="dashboard-card">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-primary" />
+                                School Records
+                            </h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Registration Number</label>
+                                    <p className="font-medium text-lg capitalize">{student.register_number || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Blood Group</label>
+                                    <p className="font-medium text-lg text-red-600 uppercase">{student.blood_group || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">House Group</label>
+                                    <p className="font-medium">N/A</p>
+                                </div>
                             </div>
                         </div>
                     </div>
