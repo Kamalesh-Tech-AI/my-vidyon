@@ -22,17 +22,36 @@ export function StudentSettings() {
         queryFn: async () => {
             if (!user?.email) return null;
 
-            const { data, error } = await supabase
+            const { data: studentData, error: studentError } = await supabase
                 .from('students')
-                .select('*, classes(id, name, groups(id, name))')
+                .select('*')
                 .ilike('email', user.email.trim())
                 .maybeSingle();
 
-            if (error) {
-                console.error('Profile Fetch Error:', error);
+            if (studentError) {
+                console.error('Profile Fetch Error:', studentError);
                 return null;
             }
-            return data;
+
+            if (!studentData) return null;
+
+            // Resolve class and group info separately since there's no direct FK
+            const { data: classData } = await supabase
+                .from('classes')
+                .select(`
+                    id, 
+                    name, 
+                    groups!inner(id, name, institution_id)
+                `)
+                .eq('name', studentData.class_name)
+                .eq('groups.institution_id', studentData.institution_id)
+                .contains('sections', [studentData.section])
+                .maybeSingle();
+
+            return {
+                ...studentData,
+                classes: classData
+            };
         },
         enabled: !!user?.email,
         staleTime: 1000 * 60,
@@ -139,34 +158,37 @@ export function StudentSettings() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <div className="space-y-2">
                                     <Label>{t.parent.settings?.fullName || "Full Name"}</Label>
-                                    <Input value={studentProfile?.name || user.name} disabled />
+                                    <Input value={studentProfile?.name || user.name} disabled className="bg-muted/50" />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{t.parent.settings?.email || "Email Address"}</Label>
-                                    <Input value={studentProfile?.email || user.email} disabled />
+                                    <Input value={studentProfile?.email || user.email} disabled className="bg-muted/50" />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{t.parent.settings?.phone || "Phone Number"}</Label>
                                     <div className="relative">
                                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                        <Input className="pl-10" value={studentProfile?.parent_contact || ""} placeholder="Not provided" readOnly />
+                                        <Input className="pl-10 bg-muted/50" value={studentProfile?.parent_contact || ""} placeholder="Not provided" disabled />
                                     </div>
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Emergency Contact</Label>
-                                    <Input value={studentProfile?.parent_phone || ""} placeholder="Not provided" readOnly />
+                                    <Input value={studentProfile?.parent_phone || ""} placeholder="Not provided" disabled className="bg-muted/50" />
                                 </div>
                                 <div className="space-y-2 sm:col-span-2">
                                     <Label>{t.parent.settings?.address || "Address"}</Label>
                                     <div className="relative">
                                         <MapPin className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
-                                        <Input className="pl-10" value={studentProfile?.address || ""} placeholder="No address provided" readOnly />
+                                        <Input className="pl-10 bg-muted/50" value={studentProfile?.address || ""} placeholder="No address provided" disabled />
                                     </div>
                                 </div>
                             </div>
                         )}
-                        <div className="mt-4 sm:mt-6 flex justify-end">
-                            <Button className="w-full sm:w-auto min-h-[44px]" disabled>{t.parent.settings?.saveChanges || "Save Changes"}</Button>
+                        <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-100 flex items-start gap-3">
+                            <Building className="w-5 h-5 text-amber-600 mt-0.5" />
+                            <p className="text-sm text-amber-800">
+                                <strong>Note:</strong> To update your personal or contact information, please visit the institution administration office.
+                            </p>
                         </div>
                     </div>
 

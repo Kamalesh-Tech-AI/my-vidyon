@@ -29,7 +29,7 @@ export function StudentMaterials() {
             // 1. Get Student Data (Class & Section)
             const { data: studentData, error: studentError } = await supabase
                 .from('students')
-                .select('*, classes(id, name)') // Assuming 'section' is part of '*' or needs to be explicitly selected if not.
+                .select('*')
                 .eq('id', user?.id)
                 .single();
 
@@ -37,10 +37,21 @@ export function StudentMaterials() {
                 console.warn("Student record not found.", studentError);
                 fetchMaterials(null, null);
             } else {
-                setStudentClass(studentData.classes);
-                // Assuming 'section' column exists on students table (common pattern)
-                // If not, it comes from section_id? Let's try 'section'.
-                fetchMaterials(studentData.class_id, studentData.section);
+                // Resolve class ID manually since there's no direct FK
+                const { data: classData } = await supabase
+                    .from('classes')
+                    .select(`
+                        id, 
+                        name,
+                        groups!inner(institution_id)
+                    `)
+                    .eq('name', studentData.class_name)
+                    .eq('groups.institution_id', studentData.institution_id)
+                    .contains('sections', [studentData.section])
+                    .maybeSingle();
+
+                setStudentClass(classData);
+                fetchMaterials(classData?.id || null, studentData.section);
                 return;
             }
         } catch (error) {
