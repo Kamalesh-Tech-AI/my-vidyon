@@ -62,12 +62,12 @@ export function SubjectCard({
 
                 {/* Contact Buttons */}
                 {instructorPhone && (
-                    <div className="flex gap-2 pt-3 border-t border-border">
+                    <div className="flex flex-wrap gap-2 pt-3 border-t border-border">
                         <Button
                             onClick={handleCall}
                             variant="outline"
                             size="sm"
-                            className="flex-1 gap-2"
+                            className="flex-1 min-w-[80px] gap-1.5"
                         >
                             <Phone className="h-4 w-4" />
                             Call
@@ -76,7 +76,7 @@ export function SubjectCard({
                             onClick={handleWhatsApp}
                             variant="outline"
                             size="sm"
-                            className="flex-1 gap-2 text-green-600 hover:text-green-700 hover:border-green-600"
+                            className="flex-1 min-w-[110px] gap-1.5 text-green-600 hover:text-green-700 hover:border-green-600"
                         >
                             <MessageCircle className="h-4 w-4" />
                             WhatsApp
