@@ -109,23 +109,30 @@ export function InstitutionCalendar() {
 
         const fetchEvents = async () => {
             try {
+                // 1. Resolve to Text ID
+                const { data: instData } = await supabase
+                    .from('institutions')
+                    .select('institution_id')
+                    .eq('id', user.institutionId)
+                    .maybeSingle();
+
+                const textId = instData?.institution_id;
+                if (!textId) return;
+
                 const { data, error } = await supabase
                     .from('academic_events')
                     .select('*')
-                    .eq('institution_id', user.institutionId)
+                    .eq('institution_id', textId)
                     .order('start_date', { ascending: true });
 
                 if (error) throw error;
 
                 if (data) {
                     const formattedEvents: AcademicEvent[] = data.map(e => {
-                        // Transform DB date to UI string
-                        // Start: 2026-04-01T00:00:00Z -> "Apr 01, 2026"
                         const start = new Date(e.start_date);
                         const end = new Date(e.end_date);
 
                         let dateStr = format(start, 'MMM dd, yyyy');
-                        // Check if range
                         if (start.getTime() !== end.getTime()) {
                             dateStr = `${format(start, 'MMM dd')} - ${format(end, 'MMM dd, yyyy')}`;
                         }
@@ -133,7 +140,7 @@ export function InstitutionCalendar() {
                         return {
                             id: e.id,
                             title: e.title,
-                            type: e.event_type, // DB column mapping
+                            type: e.event_type,
                             category: e.category || 'General',
                             description: e.description || '',
                             date: dateStr,
@@ -143,6 +150,7 @@ export function InstitutionCalendar() {
                             banner_url: e.banner_url || null
                         };
                     });
+
                     setEvents(formattedEvents);
                 }
             } catch (err: any) {
@@ -155,21 +163,32 @@ export function InstitutionCalendar() {
 
         fetchEvents();
 
-        // Realtime Subscription
-        const channel = supabase
-            .channel('academic_events_changes')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'academic_events', filter: `institution_id=eq.${user.institutionId}` },
-                () => {
-                    fetchEvents();
-                }
-            )
-            .subscribe();
+        // Realtime Subscription (Need Text ID first? Or just listen to all changes? Or sub in inner function?)
+        // Since subscription is async, we can do a quick fetch
+        let channelEvents: any = null;
+
+        const sub = async () => {
+            const { data: instData } = await supabase
+                .from('institutions')
+                .select('institution_id')
+                .eq('id', user.institutionId)
+                .maybeSingle();
+            const textId = instData?.institution_id;
+            if (!textId) return;
+
+            channelEvents = supabase
+                .channel('academic_events_changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'academic_events', filter: `institution_id=eq.${textId}` },
+                    () => fetchEvents()
+                )
+                .subscribe();
+        };
+        sub();
 
         return () => {
-            supabase.removeChannel(channel);
+            if (channelEvents) supabase.removeChannel(channelEvents);
         };
-
     }, [user?.institutionId]);
 
     const handleClassSelect = (cls: string) => {
@@ -253,6 +272,15 @@ export function InstitutionCalendar() {
         setIsSubmitting(true);
 
         try {
+            // Resolve Text ID
+            const { data: instData } = await supabase
+                .from('institutions')
+                .select('institution_id')
+                .eq('id', user.institutionId)
+                .maybeSingle();
+            const textId = instData?.institution_id;
+            if (!textId) throw new Error("Institution ID not found");
+
             if (!dateRange?.from) {
                 toast.error("Please select a date range");
                 setIsSubmitting(false);
@@ -300,14 +328,15 @@ export function InstitutionCalendar() {
             console.log("Inserting event into DB with banner_url:", bannerUrl);
 
             const { error } = await supabase.from('academic_events').insert([{
-                institution_id: user.institutionId,
+                institution_id: textId,
                 title: newEvent.title,
                 description: newEvent.description,
                 event_type: newEvent.type,
                 category: newEvent.category,
-                start_date: start.toISOString(),
-                end_date: end.toISOString(),
-                banner_url: bannerUrl
+                start_date: dateRange.from.toISOString(),
+                end_date: (dateRange.to || dateRange.from).toISOString(),
+                banner_url: bannerUrl,
+                event_date: dateRange.from.toISOString().split('T')[0]
             }]);
 
             if (error) throw error;
@@ -373,18 +402,12 @@ export function InstitutionCalendar() {
     };
 
     const handleUpdateEvent = async () => {
-        if (!user?.institutionId || !editingEvent) return;
+        if (!user?.institutionId || !editingEvent || !newEvent.title || !dateRange?.from) return;
         setIsSubmitting(true);
 
         try {
-            if (!dateRange?.from) {
-                toast.error("Please select a date range");
-                setIsSubmitting(false);
-                return;
-            }
-
-            const start = dateRange.from;
-            const end = dateRange.to || dateRange.from;
+            // No need to resolve ID for Update as we have Event ID, BUT good to verify ownership if RLS wasn't enough?
+            // Existing logic just updates by ID. RLS handles the rest.
 
             let bannerUrl: string | null = editingEvent.banner_url || null;
 
@@ -424,9 +447,10 @@ export function InstitutionCalendar() {
                     description: newEvent.description,
                     event_type: newEvent.type,
                     category: newEvent.category,
-                    start_date: start.toISOString(),
-                    end_date: end.toISOString(),
-                    banner_url: bannerUrl
+                    start_date: dateRange.from.toISOString(),
+                    end_date: (dateRange.to || dateRange.from).toISOString(),
+                    banner_url: bannerUrl,
+                    event_date: dateRange.from.toISOString().split('T')[0]
                 })
                 .eq('id', editingEvent.id)
                 .eq('institution_id', user.institutionId);
@@ -856,16 +880,16 @@ export function InstitutionCalendar() {
                                             <span className={`text-sm ${isToday ? 'font-bold text-primary' : ''}`}>{day}</span>
                                         </div>
                                         <div className="space-y-1 mt-1">
-                                            {dayEvents.map((event, idx) => {
-                                                const colorClass = event.type === 'exam' && EXAM_COLORS[event.category]
-                                                    ? EXAM_COLORS[event.category]
-                                                    : event.type === 'holiday'
+                                            {dayEvents.map((evt, idx) => {
+                                                const colorClass = evt.type === 'exam' && EXAM_COLORS[evt.category]
+                                                    ? EXAM_COLORS[evt.category]
+                                                    : evt.type === 'holiday'
                                                         ? 'bg-destructive/10 text-destructive border-destructive/20'
                                                         : 'bg-primary/10 text-primary border-primary/20';
 
                                                 return (
-                                                    <div key={`${event.id}-${idx}`} className={`p-1 text-[10px] rounded truncate border ${colorClass}`} title={event.title}>
-                                                        {event.title}
+                                                    <div key={`${evt.id}-${idx}`} className={`p-1 text-[10px] rounded truncate border ${colorClass}`} title={evt.title}>
+                                                        {evt.title}
                                                     </div>
                                                 );
                                             })}
@@ -905,20 +929,24 @@ export function InstitutionCalendar() {
                                         <Badge variant="info" className="bg-background/80 backdrop-blur-sm text-foreground shadow-sm uppercase text-[10px]">{event.type}</Badge>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => handleEditClick(event)}
-                                    className="absolute top-2 left-2 p-1.5 bg-background/80 text-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary hover:text-white z-10"
-                                    title="Edit Event"
-                                >
-                                    <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                    onClick={() => handleDeleteClick(event.id)}
-                                    className="absolute top-2 left-12 p-1.5 bg-background/80 text-destructive rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white z-10"
-                                    title="Delete Event"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                {event.isUserAdded && (
+                                    <>
+                                        <button
+                                            onClick={() => handleEditClick(event)}
+                                            className="absolute top-2 left-2 p-1.5 bg-background/80 text-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary hover:text-white z-10"
+                                            title="Edit Event"
+                                        >
+                                            <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteClick(event.id)}
+                                            className="absolute top-2 left-12 p-1.5 bg-background/80 text-destructive rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white z-10"
+                                            title="Delete Event"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </>
+                                )}
                                 <div
                                     className="p-4 bg-card cursor-pointer"
                                     onClick={() => handleEventClick(event)}
@@ -984,13 +1012,15 @@ export function InstitutionCalendar() {
                                 )}
                             </div>
                             <DialogFooter>
-                                <Button variant="destructive" onClick={() => {
-                                    setIsDetailsDialogOpen(false);
-                                    handleDeleteClick(selectedEvent.id);
-                                }}>
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
-                                </Button>
+                                {selectedEvent.isUserAdded && (
+                                    <Button variant="destructive" onClick={() => {
+                                        setIsDetailsDialogOpen(false);
+                                        handleDeleteClick(selectedEvent.id);
+                                    }}>
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete
+                                    </Button>
+                                )}
                                 <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
                                     Close
                                 </Button>

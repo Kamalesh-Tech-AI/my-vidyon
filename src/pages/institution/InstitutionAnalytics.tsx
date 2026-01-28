@@ -32,6 +32,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useWebSocketContext } from '@/context/WebSocketContext';
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
+import { calculateWorkingDays, calculateAttendancePercentage } from '@/utils/attendanceUtils';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
@@ -63,6 +64,50 @@ export function InstitutionAnalytics() {
                 .from('student_fees')
                 .select('amount_paid, amount_due, student_id, status')
                 .eq('institution_id', user!.institutionId);
+
+            // 3. Fetch Institution Settings & Holidays for Overall Attendance
+            // We need to resolve the Text ID for academic_events
+            const { data: instSettings } = await supabase
+                .from('institutions')
+                .select('*')
+                .eq('id', user!.institutionId) // user.institutionId is likely UUID
+                .single();
+
+            const institutionTextId = instSettings?.institution_id;
+
+            const { data: holidaysData } = await supabase
+                .from('academic_events')
+                .select('start_date, end_date')
+                .eq('institution_id', institutionTextId) // Use Text ID
+                .eq('event_type', 'holiday');
+
+            const holidays: string[] = [];
+            holidaysData?.forEach(h => {
+                const start = new Date(h.start_date);
+                const end = new Date(h.end_date);
+                const current = new Date(start);
+                while (current <= end) {
+                    holidays.push(current.toISOString().split('T')[0]);
+                    current.setDate(current.getDate() + 1);
+                }
+            });
+
+            // 3.5 Fetch Announcement Holidays
+            const { data: announcementData } = await supabase
+                .from('announcements')
+                .select('title, content, published_at')
+                .eq('institution_id', user!.institutionId) // UUID
+                .or('title.ilike.%holiday%,title.ilike.%leave%,title.ilike.%closed%,title.ilike.%rain%,content.ilike.%holiday%');
+
+            const announcementHolidays = (announcementData || []).map(a => a.published_at.split('T')[0]);
+
+            // 4. Fetch Overall Attendance Count (Present)
+            const { count: overallPresentCount } = await supabase
+                .from('student_attendance')
+                .select('*', { count: 'exact', head: true })
+                .eq('institution_id', user!.institutionId)
+                .eq('status', 'present')
+                .gte('attendance_date', instSettings?.academic_year_start || format(new Date(), 'yyyy-MM-dd'));
 
             // Common Stats
             const totalRev = feesData?.reduce((sum, item) => sum + (Number(item.amount_paid) || 0), 0) || 0;
@@ -163,6 +208,20 @@ export function InstitutionAnalytics() {
                 avg: 80
             }));
 
+            // Calculate Overall Institution Attendance
+            const workingDays = instSettings?.academic_year_start
+                ? calculateWorkingDays(
+                    new Date(instSettings.academic_year_start),
+                    new Date(),
+                    holidays,
+                    true,
+                    [], // Special dates excluded for overall metric as they vary by class
+                    announcementHolidays
+                )
+                : 0;
+            const totalPossibleManDays = workingDays * (studentCount || 0);
+            const overallAttendance = calculateAttendancePercentage(overallPresentCount || 0, totalPossibleManDays);
+
             return {
                 totalStudents: studentCount || 0,
                 totalFaculty: facultyCount || 0,
@@ -170,7 +229,7 @@ export function InstitutionAnalytics() {
                 totalRevenue: totalRev,
                 deptChartData: deptChartData.length > 0 ? deptChartData : [{ name: 'No Data', value: 0 }],
                 performanceData: performanceData,
-                // New Fee Stats
+                overallAttendance: overallAttendance,
                 feeStats
             };
         },
@@ -182,6 +241,7 @@ export function InstitutionAnalytics() {
             totalRevenue: 0,
             deptChartData: [],
             performanceData: [],
+            overallAttendance: '0%',
             feeStats: null
         }
     });
@@ -353,13 +413,13 @@ export function InstitutionAnalytics() {
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Active Classes</CardTitle>
-                        <School className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Overall Attendance</CardTitle>
+                        <Activity className="h-4 w-4 text-success" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{loading ? "..." : analytics.totalClasses}</div>
+                        <div className="text-2xl font-bold">{loading ? "..." : analytics.overallAttendance}</div>
                         <p className="text-xs text-muted-foreground mt-1">
-                            Across all sections
+                            Year-to-date average
                         </p>
                     </CardContent>
                 </Card>

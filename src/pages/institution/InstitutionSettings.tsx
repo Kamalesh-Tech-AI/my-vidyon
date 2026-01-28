@@ -30,6 +30,8 @@ export function InstitutionSettings() {
     const [phone, setPhone] = useState('');
     const [address, setAddress] = useState('');
     const [academicYear, setAcademicYear] = useState('');
+    const [academicYearStart, setAcademicYearStart] = useState('');
+    const [academicYearEnd, setAcademicYearEnd] = useState('');
 
     // Fetch institution data
     const { data: institution, isLoading } = useQuery({
@@ -56,6 +58,8 @@ export function InstitutionSettings() {
             setPhone(institution.phone || '');
             setAddress(institution.address || '');
             setAcademicYear(institution.current_academic_year || '');
+            setAcademicYearStart(institution.academic_year_start || '');
+            setAcademicYearEnd(institution.academic_year_end || '');
         }
     }, [institution]);
 
@@ -85,7 +89,9 @@ export function InstitutionSettings() {
             email,
             phone,
             address,
-            current_academic_year: academicYear
+            current_academic_year: academicYear,
+            academic_year_start: academicYearStart || null,
+            academic_year_end: academicYearEnd || null
         });
     };
 
@@ -169,11 +175,27 @@ export function InstitutionSettings() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Current Academic Year</Label>
+                                        <Label>Current Academic Year (Display Name)</Label>
                                         <Input
                                             value={academicYear}
                                             onChange={(e) => setAcademicYear(e.target.value)}
                                             placeholder="2025-26"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Academic Year Start Date</Label>
+                                        <Input
+                                            type="date"
+                                            value={academicYearStart}
+                                            onChange={(e) => setAcademicYearStart(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Academic Year End Date</Label>
+                                        <Input
+                                            type="date"
+                                            value={academicYearEnd}
+                                            onChange={(e) => setAcademicYearEnd(e.target.value)}
                                         />
                                     </div>
                                     <div className="md:col-span-2 space-y-2">

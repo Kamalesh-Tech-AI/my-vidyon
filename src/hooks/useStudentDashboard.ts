@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useERPRealtime } from './useERPRealtime';
+import { calculateWorkingDays, calculateAttendancePercentage } from '@/utils/attendanceUtils';
 
 interface StudentDashboardStats {
     totalAssignments: number;
@@ -66,11 +67,131 @@ export function useStudentDashboard(studentId?: string, institutionId?: string) 
         staleTime: 24 * 60 * 60 * 1000,
     });
 
+    // 0.1 Fetch Institution Settings (Academic Year)
+    const { data: institutionSettings } = useQuery({
+        queryKey: ['institution-settings-full', instUuid],
+        queryFn: async () => {
+            if (!instUuid) return null;
+            const { data } = await supabase
+                .from('institutions')
+                .select('*')
+                .eq('id', instUuid)
+                .single();
+            return data;
+        },
+        enabled: !!instUuid,
+        staleTime: 60 * 60 * 1000,
+    });
+
+    // 0.2 Fetch Holidays for attendance calculation
+    const { data: holidays = [] } = useQuery({
+        queryKey: ['institution-holidays', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return [];
+            const { data } = await supabase
+                .from('academic_events')
+                .select('start_date, end_date')
+                .eq('institution_id', institutionId)
+                .eq('event_type', 'holiday');
+
+            const dates: string[] = [];
+            data?.forEach(h => {
+                const start = new Date(h.start_date);
+                const end = new Date(h.end_date);
+                const current = new Date(start);
+                while (current <= end) {
+                    dates.push(current.toISOString().split('T')[0]);
+                    current.setDate(current.getDate() + 1);
+                }
+            });
+            return Array.from(new Set(dates));
+        },
+        enabled: !!instUuid,
+        staleTime: 60 * 60 * 1000,
+    });
+
+    // 0.3 Fetch Student Class Details (to get Class ID for special schedule)
+    const { data: classDetails } = useQuery({
+        queryKey: ['student-class-details', studentId, institutionId, instUuid],
+        queryFn: async () => {
+            if (!studentId || !instUuid) return null;
+
+            // 1. Get student's class name and section
+            const { data: studentData } = await supabase
+                .from('students')
+                .select('class_name, section')
+                .eq('id', studentId)
+                .single();
+
+            if (!studentData) return null;
+
+            // 2. Resolve Class ID
+            const { data: classData } = await supabase
+                .from('classes')
+                .select('id, name')
+                .eq('name', studentData.class_name)
+                .eq('institution_id', instUuid) // Use UUID here as per common schema, or check if table uses text
+                .contains('sections', [studentData.section])
+                .maybeSingle();
+
+            if (!classData) return null;
+
+            return {
+                classId: classData.id,
+                className: studentData.class_name,
+                section: studentData.section
+            };
+        },
+        enabled: !!studentId && !!instUuid,
+        staleTime: 60 * 60 * 1000,
+    });
+
+    // 0.4 Fetch Special Timetable Slots (Override Holidays)
+    const { data: specialDates = [] } = useQuery({
+        queryKey: ['special-slots', classDetails?.classId],
+        queryFn: async () => {
+            if (!classDetails?.classId) return [];
+
+            const { data } = await supabase
+                .from('special_timetable_slots')
+                .select('event_date')
+                .eq('class_id', classDetails.classId);
+
+            // Return unique date strings
+            return Array.from(new Set(data?.map(d => d.event_date) || []));
+        },
+        enabled: !!classDetails?.classId,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // 0.5 Fetch Announcements (Holiday Keywords)
+    const { data: announcementHolidays = [] } = useQuery({
+        queryKey: ['announcement-holidays', instUuid],
+        queryFn: async () => {
+            if (!instUuid) return [];
+
+            // Search for announcements with keywords like Holiday, Leave, Closed
+            const { data } = await supabase
+                .from('announcements')
+                .select('title, content, published_at')
+                .eq('institution_id', instUuid)
+                .or('title.ilike.%holiday%,title.ilike.%leave%,title.ilike.%closed%,title.ilike.%rain%,content.ilike.%holiday%');
+
+            // Map published_at to YYYY-MM-DD
+            // Assumption: The holiday is ON the day of publication or implied.
+            // A more robust system would require a specific 'date' column in announcements, 
+            // but for now we map the published date.
+            return (data || []).map(a => a.published_at.split('T')[0]);
+        },
+        enabled: !!instUuid,
+        staleTime: 5 * 60 * 1000,
+    });
+
     // 1. Fetch Assignments
     const { data: assignments = [] } = useQuery({
         queryKey: ['student-assignments', studentId, instUuid],
         queryFn: async () => {
-            console.log('🚀 [v3] Fetching assignments for student:', studentId);
+            // console.log('🚀 [v3] Fetching assignments for student:', studentId);
             if (!studentId || !instUuid) return [];
 
             const { data, error } = await supabase
@@ -148,6 +269,29 @@ export function useStudentDashboard(studentId?: string, institutionId?: string) 
         staleTime: 2 * 60 * 1000,
     });
 
+    // 3.5 Fetch Attendance Stats (Count)
+    const { data: attendanceStats } = useQuery({
+        queryKey: ['student-attendance-stats', studentId, institutionSettings?.academic_year_start],
+        queryFn: async () => {
+            if (!studentId || !institutionSettings?.academic_year_start) return { presentCount: 0 };
+
+            const { count, error } = await supabase
+                .from('student_attendance')
+                .select('*', { count: 'exact', head: true })
+                .eq('student_id', studentId)
+                .eq('status', 'present')
+                .gte('attendance_date', institutionSettings.academic_year_start);
+
+            if (error) {
+                console.error('Error fetching attendance stats:', error);
+                return { presentCount: 0 };
+            }
+            return { presentCount: count || 0 };
+        },
+        enabled: !!studentId && !!institutionSettings?.academic_year_start,
+        staleTime: 2 * 60 * 1000,
+    });
+
     // 4. Fetch Fee Payment Status
     const { data: feeStatus } = useQuery({
         queryKey: ['student-fees', studentId],
@@ -176,16 +320,16 @@ export function useStudentDashboard(studentId?: string, institutionId?: string) 
 
     // 5. Fetch Upcoming Events
     const { data: upcomingEventsCount = 0 } = useQuery({
-        queryKey: ['student-events', instUuid],
+        queryKey: ['student-events', institutionId],
         queryFn: async () => {
-            if (!instUuid) return 0;
+            if (!institutionId) return 0;
 
             const today = new Date().toISOString().split('T')[0];
 
             const { count, error } = await supabase
                 .from('academic_events')
                 .select('id', { count: 'exact', head: true })
-                .eq('institution_id', instUuid)
+                .eq('institution_id', institutionId)
                 .gte('event_date', today);
 
             if (error) throw error;
@@ -196,12 +340,22 @@ export function useStudentDashboard(studentId?: string, institutionId?: string) 
     });
 
     // 6. Calculate Dashboard Stats
+    // Uses: holidays (calendar), specialDates (overrides), announcementHolidays (keywords)
+    const workingDays = institutionSettings?.academic_year_start
+        ? calculateWorkingDays(
+            new Date(institutionSettings.academic_year_start),
+            new Date(),
+            holidays,
+            true,
+            specialDates,
+            announcementHolidays
+        )
+        : 0;
+
     const stats: StudentDashboardStats = {
         totalAssignments: assignments.length,
         pendingAssignments: assignments.filter(a => a.status === 'pending').length,
-        attendancePercentage: attendanceRecords.length > 0
-            ? `${Math.round((attendanceRecords.filter(r => r.status === 'present').length / attendanceRecords.length) * 100)}%`
-            : '0%',
+        attendancePercentage: calculateAttendancePercentage(attendanceStats?.presentCount || 0, workingDays),
         averageGrade: grades.length > 0
             ? `${Math.round(grades.reduce((sum, g) => sum + (g.marks / g.totalMarks) * 100, 0) / grades.length)}%`
             : 'N/A',
