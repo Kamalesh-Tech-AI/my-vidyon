@@ -38,11 +38,15 @@ export function ParentExamScheduleView({ institutionId, classId, section }: Pare
                 return [];
             }
 
-            console.log('🔍 PARENT EXAM SCHEDULE QUERY - How Fetching with:', {
+            console.log('🔍 PARENT EXAM SCHEDULE QUERY - Fetching with:', {
                 institution_id: institutionId,
                 class_id: classId,
                 section: section
             });
+
+            // Normalizing classId (e.g., "10th" -> "10")
+            const normalizedClassId = classId.replace(/(st|nd|rd|th)$/i, '');
+            console.log('📏 Normalized classId for search:', normalizedClassId);
 
             // Try exact match first
             let { data, error } = await supabase
@@ -52,7 +56,7 @@ export function ParentExamScheduleView({ institutionId, classId, section }: Pare
                     exam_schedule_entries (*)
                 `)
                 .eq('institution_id', institutionId)
-                .eq('class_id', classId)
+                .or(`class_id.eq.${classId},class_id.eq.${normalizedClassId}`)
                 .eq('section', section)
                 .order('created_at', { ascending: false });
 
@@ -60,26 +64,29 @@ export function ParentExamScheduleView({ institutionId, classId, section }: Pare
                 console.error('❌ Error fetching exam schedules:', error);
             }
 
-            // If no results, try case-insensitive matching
+            // Fallback: If no results with section, check if there's a general class schedule (section-less or matches institution_id)
             if (!data || data.length === 0) {
-                console.log('🔄 No exact matches found. Trying case-insensitive matching...');
-                const fallbackQuery = await supabase
+                console.log('🔄 No specific group matches found. Trying wider search...');
+                const widerSearch = await supabase
                     .from('exam_schedules')
                     .select(`
                         *,
                         exam_schedule_entries (*)
                     `)
                     .eq('institution_id', institutionId)
-                    .ilike('class_id', classId)
-                    .ilike('section', section)
+                    .or(`class_id.ilike.%${normalizedClassId}%`)
                     .order('created_at', { ascending: false });
 
-                if (fallbackQuery.error) {
-                    console.error('❌ Error fetching exam schedules (case-insensitive):', fallbackQuery.error);
-                    return [];
+                if (!widerSearch.error && widerSearch.data && widerSearch.data.length > 0) {
+                    console.log('✅ Found schedules with wider search:', widerSearch.data.length);
+                    data = widerSearch.data;
                 }
+            }
 
-                data = fallbackQuery.data;
+            if (data) {
+                data.forEach((s: any) => {
+                    console.log(`📊 Schedule ${s.exam_display_name}: ${s.exam_schedule_entries?.length || 0} entries found.`);
+                });
             }
 
             return data || [];

@@ -26,6 +26,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ExamSchedulePreview } from '@/components/exam-schedule/ExamSchedulePreview';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -102,6 +103,8 @@ export function InstitutionCalendar() {
     const [selectedExamClass, setSelectedExamClass] = useState<string | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
     const [viewTimetable, setViewTimetable] = useState<{ exam: string } | null>(null);
+    const [timetableData, setTimetableData] = useState<any>(null);
+    const [isFetchingTimetable, setIsFetchingTimetable] = useState(false);
 
     // Fetch Events
     useEffect(() => {
@@ -203,6 +206,84 @@ export function InstitutionCalendar() {
     const handleExamSelect = (exam: string) => {
         setViewTimetable({ exam });
     };
+
+    // Fetch timetable data when selection changes
+    useEffect(() => {
+        const fetchTimetableEntries = async () => {
+            if (!viewTimetable || !selectedExamClass || !user?.institutionId) return;
+
+            setIsFetchingTimetable(true);
+            try {
+                // 1. Get Text ID (It's likely already in user.institutionId based on AuthContext, but verifying)
+                // If user.institutionId is 'MYVID2026', we don't need to fetch it again if we just want the text ID.
+                // However, let's keep it safe. 
+                // The error was `.eq('id', user.institutionId)` where user.institutionId is 'MYVID2026' (text) but id is UUID.
+
+                let textId = user.institutionId;
+
+                // Check if it's a UUID (hypothetical check, but effectively we just trust it or verify existence)
+                // If the user context has the text ID, we can skip this fetch or fix the query.
+                // Let's assume user.institutionId IS the text ID like 'MYVID2026'.
+
+                // But just in case it's a UUID (legacy logic?), we can try to resolve it.
+                // Better approach: Query by institution_id OR id. 
+
+                const { data: instData } = await supabase
+                    .from('institutions')
+                    .select('institution_id')
+                    .or(`id.eq.${user.institutionId},institution_id.eq.${user.institutionId}`)
+                    .maybeSingle();
+
+                if (instData) {
+                    textId = instData.institution_id;
+                }
+                if (!textId) return;
+
+                // Normalize exam type for comparison
+                const examType = viewTimetable.exam.toLowerCase().replace(/\s+/g, '-');
+
+                // Normalization: Check for both "10" and "10th"
+                const normalizedClassVariant = selectedExamClass.match(/^\d+$/)
+                    ? `${selectedExamClass}th`
+                    : selectedExamClass.replace(/th$/i, '');
+
+                const { data, error } = await supabase
+                    .from('exam_schedules')
+                    .select(`
+                        *,
+                        exam_schedule_entries (*)
+                    `)
+                    .eq('institution_id', textId)
+                    .or(`class_id.eq.${selectedExamClass},class_id.eq.${normalizedClassVariant}`)
+                    .or(`exam_type.eq.${examType},exam_display_name.ilike.%${viewTimetable.exam}%`)
+                    .maybeSingle();
+
+                console.log('📋 Query search values:', {
+                    institution_id: textId,
+                    class_variants: [selectedExamClass, normalizedClassVariant],
+                    exam_variants: [examType, viewTimetable.exam]
+                });
+
+                if (error) {
+                    console.error('❌ Error fetching timetable:', error);
+                    setTimetableData(null);
+                } else if (!data) {
+                    console.log('ℹ️ No schedule found for:', { selectedExamClass, normalizedClassVariant, examType });
+                    setTimetableData(null);
+                } else {
+                    console.log('✅ Found timetable data:', data);
+                    console.log('🔢 Entries count:', data.exam_schedule_entries?.length || 0);
+                    setTimetableData(data);
+                }
+            } catch (err) {
+                console.error("Unexpected error fetching timetable:", err);
+            } finally {
+                setIsFetchingTimetable(false);
+            }
+        };
+
+        fetchTimetableEntries();
+    }, [viewTimetable, selectedExamClass, user?.institutionId]);
 
     // Smooth Calendar Transition
     const calendarTransitionStyle = `
@@ -1202,69 +1283,73 @@ export function InstitutionCalendar() {
                 </div >
             </div >
 
-            {/* Timetable Popup - Static */}
-            <Dialog open={!!viewTimetable} onOpenChange={(open) => !open && setViewTimetable(null)}>
-                <DialogContent className="max-w-3xl">
+            {/* Timetable Popup - Dynamic */}
+            <Dialog open={!!viewTimetable} onOpenChange={(open) => {
+                if (!open) {
+                    setViewTimetable(null);
+                    setTimetableData(null);
+                }
+            }}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-primary" />
-                            {viewTimetable?.exam} Examination Schedule
+                        <DialogTitle>
+                            {timetableData ? `${timetableData.exam_display_name} Schedule` : 'Exam Schedule'}
                         </DialogTitle>
                         <DialogDescription>
-                            Class {selectedExamClass} {selectedGroup ? `- ${selectedGroup}` : ''} • Academic Year 2025-2026
+                            {timetableData
+                                ? `Viewing timetable for ${timetableData.class_id} - Section ${timetableData.section}`
+                                : 'Fetching schedule details...'}
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="mt-4 border rounded-xl overflow-hidden shadow-sm bg-card">
-                        <table className="w-full text-sm text-left border-collapse">
-                            <thead className="bg-muted/50 text-muted-foreground font-medium border-b">
-                                <tr>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Date & Day</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Time</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Subject</th>
-                                    <th className="p-4 font-semibold uppercase text-xs tracking-wider">Syllabus / Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/50">
-                                {[
-                                    { date: '10 May 2026', day: 'Monday', time: '09:00 AM - 12:00 PM', subject: 'Mathematics', notes: 'Chapters 1-5' },
-                                    { date: '12 May 2026', day: 'Wednesday', time: '09:00 AM - 12:00 PM', subject: 'Physics', notes: 'Thermodynamics & Motion' },
-                                    { date: '14 May 2026', day: 'Friday', time: '09:00 AM - 12:00 PM', subject: 'Chemistry', notes: 'Organic Chemistry Basic' },
-                                    { date: '17 May 2026', day: 'Monday', time: '09:00 AM - 12:00 PM', subject: 'English', notes: 'Grammar & Composition' },
-                                    { date: '19 May 2026', day: 'Wednesday', time: '09:00 AM - 12:00 PM', subject: 'Computer Science', notes: 'Programming Basics' },
-                                ].map((row, i) => (
-                                    <tr key={i} className="group hover:bg-muted/30 transition-colors">
-                                        <td className="p-4">
-                                            <div className="font-semibold text-foreground">{row.date}</div>
-                                            <div className="text-xs text-muted-foreground">{row.day}</div>
-                                        </td>
-                                        <td className="p-4 text-muted-foreground whitespace-nowrap">
-                                            <div className="flex items-center gap-1.5">
-                                                <Clock className="w-3.5 h-3.5 opacity-70" />
-                                                {row.time}
-                                            </div>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className="font-semibold text-primary">{row.subject}</span>
-                                        </td>
-                                        <td className="p-4 text-muted-foreground">
-                                            <div className="flex items-center gap-2">
-                                                <BookOpen className="w-3.5 h-3.5 opacity-50" />
-                                                {row.notes}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setViewTimetable(null)}>Close</Button>
-                        <Button className="gap-2"><Download className="w-4 h-4" /> Download PDF</Button>
-                    </DialogFooter>
+                    {isFetchingTimetable ? (
+                        <div className="flex flex-col items-center justify-center p-12 space-y-4">
+                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                            <p className="text-sm text-muted-foreground">Fetching examination schedule...</p>
+                        </div>
+                    ) : timetableData ? (
+                        <ExamSchedulePreview
+                            schedule={{
+                                id: timetableData.id,
+                                exam_type: timetableData.exam_type,
+                                exam_display_name: timetableData.exam_display_name,
+                                class_id: timetableData.class_id,
+                                section: timetableData.section,
+                                academic_year: timetableData.academic_year,
+                                entries: timetableData.exam_schedule_entries.map((e: any) => ({
+                                    id: e.id,
+                                    exam_date: new Date(e.exam_date),
+                                    day_of_week: e.day_of_week,
+                                    start_time: e.start_time,
+                                    end_time: e.end_time,
+                                    subject: e.subject,
+                                    syllabus_notes: e.syllabus_notes,
+                                })),
+                            }}
+                            // onClose removed to hide duplicate X button (DialogContent has its own)
+                            onDownload={() => {
+                                toast.info("PDF generation started...");
+                                // Implement PDF logic here or reuse from manager
+                            }}
+                            showActions={false}
+                        />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center p-12 text-center space-y-4">
+                            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                                <CalendarIcon className="w-8 h-8 text-muted-foreground opacity-20" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold">No Schedule Found</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    No examination schedule has been published for Class {selectedExamClass} {selectedGroup ? `- ${selectedGroup}` : ''} ({viewTimetable?.exam}) yet.
+                                </p>
+                            </div>
+                            <Button variant="outline" onClick={() => setViewTimetable(null)}>Close</Button>
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
+
         </InstitutionLayout >
     );
 }
