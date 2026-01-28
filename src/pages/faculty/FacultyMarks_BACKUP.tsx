@@ -57,7 +57,10 @@ export function FacultyMarks() {
     const [reviewStudent, setReviewStudent] = useState<any | null>(null);
     const [isReviewOpen, setIsReviewOpen] = useState(false);
 
-    // 1. Fetch Exams
+    // 1. Fetch Staff Details (to get subjects and class teacher role)
+
+
+    // 2. Fetch Exams
     const { data: exams = [] } = useQuery({
         queryKey: ['exams-list', user?.institutionId],
         queryFn: async () => {
@@ -72,59 +75,33 @@ export function FacultyMarks() {
         enabled: !!user?.institutionId
     });
 
-    // 2. Fetch Faculty Assignments (Primary source: faculty_subjects table)
-    const { data: assignments = [] } = useQuery({
+    // 3. Fetch Faculty Assignments (Primary source: faculty_subjects table)
+    const { data: assignments = [], isLoading: isLoadingAssignments } = useQuery({
         queryKey: ['faculty-assignments', user?.id],
         queryFn: async () => {
-            // First, try with joins
-            let { data, error } = await supabase
+            const { data, error } = await supabase
                 .from('faculty_subjects')
                 .select(`
-                    *,
-                    subjects(name),
-                    classes(class_name)
+                    subject_id,
+                    class_id,
+                    section,
+                    assignment_type,
+                    subjects:subject_id (name),
+                    classes:class_id (class_name)
                 `)
                 .eq('faculty_profile_id', user?.id);
 
-            // If join fails (likely classes table doesn't exist), fetch without joins
             if (error) {
-                console.warn("Faculty_subjects join failed, fetching without joins:", error.message);
-
-                const { data: basicData, error: basicError } = await supabase
-                    .from('faculty_subjects')
-                    .select('*')
-                    .eq('faculty_profile_id', user?.id);
-
-                if (basicError) {
-                    console.error("Error fetching faculty_subjects:", basicError);
-                    return [];
-                }
-
-                // Manually fetch subject names
-                if (basicData && basicData.length > 0) {
-                    const subjectIds = basicData.map((a: any) => a.subject_id).filter(Boolean);
-                    const { data: subjects } = await supabase
-                        .from('subjects')
-                        .select('id, name')
-                        .in('id', subjectIds);
-
-                    // Map subject names back
-                    data = basicData.map((assignment: any) => ({
-                        ...assignment,
-                        subjects: subjects?.find((s: any) => s.id === assignment.subject_id) || null
-                    }));
-                } else {
-                    data = basicData;
-                }
+                console.error("Error fetching assignments:", error);
+                return [];
             }
-
             console.log("Faculty Assignments:", data);
             return data as any[];
         },
         enabled: !!user?.id
     });
 
-    // 3. Fetch Staff Details (Fallback for subjects and class teacher role)
+    // 4. Fetch Staff Details (Fallback for subjects and class teacher role)
     const { data: staffDetails } = useQuery({
         queryKey: ['staff-details-marks', user?.id],
         queryFn: async () => {
@@ -143,7 +120,7 @@ export function FacultyMarks() {
         enabled: !!user?.id
     });
 
-    // 4. Fetch ALL subjects as ultimate fallback
+    // 5. Fetch ALL subjects as ultimate fallback
     const { data: allInstitutionSubjects = [] } = useQuery({
         queryKey: ['all-subjects', user?.institutionId],
         queryFn: async () => {
@@ -211,59 +188,23 @@ export function FacultyMarks() {
         }
     }, [facultySubjects, selectedSubject]);
 
-    // 5. Derive Classes/Sections with multiple fallbacks
-    const classSections = (() => {
-        if (!selectedSubject) return [];
+    // 5. Derive Classes/Sections for selected Subject from Assignments
+    const classSections = assignments
+        .filter((a: any) => {
+            const className = Array.isArray(a.classes) ? a.classes[0]?.class_name : a.classes?.class_name;
+            const subjectName = Array.isArray(a.subjects) ? a.subjects[0]?.name : a.subjects?.name;
+            return (
+                a.assignment_type === 'subject_staff' &&
+                subjectName === selectedSubject &&
+                className
+            );
+        })
+        .map((a: any) => ({
+            class_name: Array.isArray(a.classes) ? a.classes[0].class_name : a.classes.class_name,
+            section: a.section
+        }));
 
-        // Priority 1: From faculty_subjects assignments
-        const assignmentClasses = assignments
-            .filter((a: any) => {
-                const className = Array.isArray(a.classes) ? a.classes[0]?.class_name : a.classes?.class_name;
-                const subjectName = Array.isArray(a.subjects) ? a.subjects[0]?.name : a.subjects?.name;
-                return (
-                    a.assignment_type === 'subject_staff' &&
-                    subjectName === selectedSubject &&
-                    className
-                );
-            })
-            .map((a: any) => ({
-                class_name: Array.isArray(a.classes) ? a.classes[0].class_name : a.classes.class_name,
-                section: a.section
-            }));
-
-        if (assignmentClasses.length > 0) {
-            console.log("Using classes from faculty_subjects:", assignmentClasses);
-            return assignmentClasses;
-        }
-
-        // Priority 2: From staff_details assigned class
-        if (staffDetails?.class_assigned) {
-            const staffClass = [{
-                class_name: staffDetails.class_assigned,
-                section: staffDetails.section_assigned || 'A'
-            }];
-            console.log("Using class from staff_details:", staffClass);
-            return staffClass;
-        }
-
-        // Priority 3: All classes that have this subject
-        const subjectClasses = allInstitutionSubjects
-            .filter((s: any) => s.name === selectedSubject && s.class_name)
-            .map((s: any) => ({
-                class_name: s.class_name,
-                section: 'A' // Default section
-            }));
-
-        // Remove duplicates
-        const uniqueClasses = Array.from(
-            new Map(subjectClasses.map(c => [`${c.class_name}|${c.section}`, c])).values()
-        );
-
-        console.log("Using classes from subjects table:", uniqueClasses);
-        return uniqueClasses;
-    })();
-
-    // Add Class Teacher assigned class
+    // Add Class Teacher assigned class as fallback
     const classTeacherAssignment = assignments.find((a: any) => a.assignment_type === 'class_teacher');
     const teacherClass = classTeacherAssignment?.classes;
     const teacherClassName = Array.isArray(teacherClass) ? teacherClass[0]?.class_name : teacherClass?.class_name;
@@ -276,7 +217,9 @@ export function FacultyMarks() {
         }
     }, [classSections, selectedClass]);
 
-    // 6. Fetch Students and existing marks
+
+
+    // 5. Fetch Students and existing marks
     const { data: studentsData = [], isLoading: isLoadingStudents } = useQuery({
         queryKey: ['marks-entry-students', selectedExam, selectedSubject, selectedClass, selectedSection],
         queryFn: async () => {
@@ -285,28 +228,20 @@ export function FacultyMarks() {
             // Fetch students in class
             const { data: students, error: studentError } = await supabase
                 .from('students')
-                .select('id, name, register_number')
+                .select('id, name, roll_no')
                 .eq('class_name', selectedClass)
                 .eq('section', selectedSection || 'A')
                 .eq('institution_id', user?.institutionId)
-                .eq('is_active', true)
-                .order('register_number', { ascending: true });
+                .order('roll_no', { ascending: true });
 
-            if (studentError) {
-                console.error("Error fetching students:", studentError);
-                console.error("Query params:", { selectedClass, selectedSection, institutionId: user?.institutionId });
-                throw studentError;
-            }
+            if (studentError) throw studentError;
 
             // Fetch existing marks
-            const subjectId = await getSubjectId(selectedSubject);
-            const examId = await getExamId(selectedExam);
-
             const { data: existingMarks } = await supabase
                 .from('exam_results')
                 .select('*')
-                .eq('exam_id', examId)
-                .eq('subject_id', subjectId)
+                .or(`exam_id.eq.${selectedExam},exam_id.in.(select id from exams where exam_type = '${selectedExam}')`)
+                .eq('subject_id', (await getSubjectId(selectedSubject)))
                 .in('student_id', students.map(s => s.id));
 
             // Sync marks to local state
@@ -326,7 +261,7 @@ export function FacultyMarks() {
         enabled: !!selectedExam && !!selectedClass && (viewMode !== 'CLASS_TEACHER')
     });
 
-    // Derived State for Progress
+    // Derived State for Progress (Moved here to access studentsData)
     const totalStudents = studentsData.length;
     const submittedCount = marksData ? Object.values(marksData).filter(m => m.status === 'SUBMITTED' || m.status === 'APPROVED' || m.status === 'PUBLISHED').length : 0;
     const progress = totalStudents > 0 ? (submittedCount / totalStudents) * 100 : 0;
@@ -335,45 +270,6 @@ export function FacultyMarks() {
     const getSubjectId = async (name: string) => {
         const { data } = await supabase.from('subjects').select('id').eq('name', name).limit(1).single();
         return data?.id;
-    };
-
-    // Helper: Get Exam UUID from exam_type or id
-    const getExamId = async (examIdentifier: string) => {
-        // If it's already a UUID format, return it
-        if (examIdentifier.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-            return examIdentifier;
-        }
-
-        // Try to look it up by exam_type
-        const { data, error } = await supabase
-            .from('exams')
-            .select('id')
-            .eq('exam_type', examIdentifier)
-            .eq('institution_id', user?.institutionId)
-            .limit(1)
-            .single();
-
-        if (data?.id) {
-            return data.id;
-        }
-
-        // If not found by exam_type, try by name
-        const { data: nameData } = await supabase
-            .from('exams')
-            .select('id')
-            .eq('name', examIdentifier)
-            .eq('institution_id', user?.institutionId)
-            .limit(1)
-            .single();
-
-        if (nameData?.id) {
-            return nameData.id;
-        }
-
-        // If still not found, return the original identifier
-        // This allows the system to work even if exams table is not fully populated
-        console.warn(`Exam not found in database: ${examIdentifier}, using as-is`);
-        return examIdentifier;
     };
 
     // --- Handlers ---
@@ -390,9 +286,14 @@ export function FacultyMarks() {
             ...prev,
             [studentId]: {
                 ...prev[studentId],
-                [field]: !isValid && value !== ''
+                [field]: !isValid && value !== '' // Mark as error if invalid and not empty
             }
         }));
+
+        if (!isValid && value !== '') {
+            // Optional: Soft toast warning only on first error interaction to separate 'noise'
+            // toast.error(`Max ${field} marks is ${max}`); 
+        }
 
         const safeValue = isNaN(numVal) ? 0 : numVal;
 
@@ -408,52 +309,28 @@ export function FacultyMarks() {
     const saveMarksMutation = useMutation({
         mutationFn: async (status: MarkStatus) => {
             setIsSubmitting(true);
-
-            // Get actual UUIDs
             const subjectId = await getSubjectId(selectedSubject);
-            const examId = await getExamId(selectedExam);
 
-            if (!subjectId) {
-                throw new Error(`Subject ID not found for: ${selectedSubject}`);
-            }
+            const records = Object.entries(marksData).map(([studentId, data]) => ({
+                id: data.id, // Supabase handles upsert with ID
+                institution_id: user?.institutionId,
+                exam_id: selectedExam,
+                student_id: studentId,
+                subject_id: subjectId,
+                internal_marks: data.internal,
+                external_marks: data.external,
+                total_marks: data.internal + data.external,
+                status: status,
+                staff_id: user?.id,
+                class_id: selectedClass,
+                section: selectedSection || 'A'
+            }));
 
-            const records = Object.entries(marksData).map(([studentId, data]) => {
-                const record: any = {
-                    exam_id: examId,
-                    student_id: studentId,
-                    subject_id: subjectId,
-                    internal_marks: data.internal || 0,
-                    external_marks: data.external || 0,
-                    total_marks: (data.internal || 0) + (data.external || 0),
-                    marks_obtained: (data.internal || 0) + (data.external || 0),
-                    max_marks: 100,
-                    status: status,
-                    staff_id: user?.id,
-                    class_id: selectedClass,
-                    section: selectedSection || 'A'
-                };
-
-                // Only include id if it exists (for updates)
-                if (data.id) {
-                    record.id = data.id;
-                }
-
-                return record;
-            });
-
-            console.log("Upserting records:", records);
-
-            const { data: result, error } = await supabase
+            const { error } = await supabase
                 .from('exam_results')
-                .upsert(records, { onConflict: 'exam_id,student_id,subject_id' });
+                .upsert(records, { onConflict: 'exam_id, student_id, subject_id' });
 
-            if (error) {
-                console.error("Upsert error:", error);
-                console.error("Error details:", JSON.stringify(error, null, 2));
-                throw error;
-            }
-
-            return result;
+            if (error) throw error;
         },
         onSuccess: (_, status) => {
             toast.success(status === 'DRAFT' ? 'Draft saved successfully' : 'Marks submitted for review');
@@ -462,49 +339,39 @@ export function FacultyMarks() {
             setIsSubmitting(false);
         },
         onError: (err: any) => {
-            console.error("Save marks error:", err);
-            toast.error("Failed to save marks: " + (err.message || 'Unknown error'));
+            toast.error("Failed to save marks: " + err.message);
             setIsSubmitting(false);
         }
     });
 
     // --- Class Teacher Logic ---
 
-    // Determine target class for Class View
-    const targetClass = teacherClassName || staffDetails?.class_assigned || selectedClass;
-    const targetSection = classTeacherAssignment?.section || staffDetails?.section_assigned || selectedSection;
+    // Determine target class for Class View (Use Class Teacher assignment)
+    const targetClass = teacherClassName || selectedClass;
+    const targetSection = classTeacherAssignment?.section || selectedSection;
 
     // Fetch students for Class Teacher view
     const { data: classTeacherStudents = [] } = useQuery({
         queryKey: ['class-teacher-students', targetClass, targetSection],
         queryFn: async () => {
             if (!targetClass) return [];
-            const { data, error } = await supabase
+            const { data } = await supabase
                 .from('students')
                 .select('*')
                 .eq('class_name', targetClass)
                 .eq('section', targetSection || 'A')
                 .eq('institution_id', user?.institutionId)
-                .eq('is_active', true)
-                .order('register_number', { ascending: true });
-
-            if (error) {
-                console.error("Error fetching class teacher students:", error);
-                return [];
-            }
+                .order('roll_no');
             return data || [];
         },
         enabled: viewMode === 'CLASS_TEACHER' && !!targetClass
     });
 
-    // Fetch all results for the class
-    const { data: classExamResults = [] } = useQuery({
+    // Fetch all results for the class to aggregate status
+    const { data: classExamResults = [], isLoading: isLoadingClassMarks } = useQuery({
         queryKey: ['class-marks-review', selectedExam, targetClass, targetSection],
         queryFn: async () => {
             if (!targetClass || !selectedExam) return [];
-
-            const examId = await getExamId(selectedExam);
-            if (!examId) return [];
 
             const { data, error } = await supabase
                 .from('exam_results')
@@ -512,7 +379,7 @@ export function FacultyMarks() {
                     *,
                     subjects!subject_id(name)
                 `)
-                .eq('exam_id', examId)
+                .eq('exam_id', selectedExam)
                 .eq('class_id', targetClass)
                 .eq('section', targetSection || 'A');
 
@@ -524,13 +391,12 @@ export function FacultyMarks() {
 
     const approveMarksMutation = useMutation({
         mutationFn: async ({ studentId, status }: { studentId: string, status: MarkStatus }) => {
-            const examId = await getExamId(selectedExam);
-
+            // Update all results for this student and exam to the new status
             const { error } = await supabase
                 .from('exam_results')
                 .update({ status, rejection_comment: status === 'APPROVED' || status === 'PUBLISHED' ? null : rejectionModal.comment })
                 .eq('student_id', studentId)
-                .eq('exam_id', examId);
+                .eq('exam_id', selectedExam);
 
             if (error) throw error;
         },
@@ -556,7 +422,7 @@ export function FacultyMarks() {
                             variant={viewMode === 'CLASS_TEACHER' ? "default" : "outline"}
                             onClick={() => setViewMode(viewMode === 'CLASS_TEACHER' ? 'ENTRY' : 'CLASS_TEACHER')}
                             className="flex items-center gap-2"
-                            disabled={!classTeacherAssignment && !staffDetails?.class_assigned && !selectedClass}
+                            disabled={!classTeacherAssignment && !selectedClass}
                         >
                             <ShieldCheck className="w-4 h-4" />
                             {viewMode === 'CLASS_TEACHER' ? "Back to Entry" : "Class Marks"}
@@ -609,7 +475,7 @@ export function FacultyMarks() {
                     targetSection={targetSection}
                 />
 
-                {/* Progress Bar */}
+                {/* Progress Bar (Only in Entry Mode) */}
                 {viewMode === 'ENTRY' && studentsData.length > 0 && (
                     <div className="px-1">
                         <div className="flex justify-between text-xs mb-2 text-muted-foreground font-medium uppercase tracking-wider">
@@ -662,12 +528,12 @@ export function FacultyMarks() {
                 isSubmitting={approveMarksMutation.isPending}
             />
 
-            {/* Rejection Comment Modal */}
+            {/* Rejection Comment Modal (Kept local as it's small and tightly coupled) */}
             <Dialog open={rejectionModal.isOpen} onOpenChange={(open) => setRejectionModal(prev => ({ ...prev, isOpen: open }))}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Reject Submission</DialogTitle>
-                        <DialogDescription>Please provide a reason for rejecting these marks.</DialogDescription>
+                        <DialogDescription>Please provide a reason for rejecting these marks. This will be sent to the faculty.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <Input
@@ -683,7 +549,7 @@ export function FacultyMarks() {
                             disabled={!rejectionModal.comment}
                             onClick={() => {
                                 if (rejectionModal.studentId) {
-                                    approveMarksMutation.mutate({ studentId: rejectionModal.studentId, status: 'DRAFT' });
+                                    approveMarksMutation.mutate({ studentId: rejectionModal.studentId, status: 'DRAFT' }); // Set back to draft
                                 }
                             }}
                         >

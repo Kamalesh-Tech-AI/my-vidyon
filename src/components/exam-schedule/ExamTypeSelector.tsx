@@ -18,7 +18,7 @@ interface ExamType {
 
 const EXAM_TYPES: ExamType[] = [
     {
-        value: 'mid-term-1', label: 'Mid-Term 1', short: 'Mid-Term',
+        value: 'mid-term-1', label: 'Mid 1', short: 'Mid 1',
         description: ''
     },
     {
@@ -26,15 +26,15 @@ const EXAM_TYPES: ExamType[] = [
         description: ''
     },
     {
-        value: 'mid-term-2', label: 'Mid-Term 2', short: 'Mid-Term',
+        value: 'mid-term-2', label: 'Mid 2', short: 'Mid 2',
         description: ''
     },
     {
-        value: 'half-yearly', label: 'Half-yearly', short: 'Half-yearly',
+        value: 'half-yearly', label: 'Half yearly', short: 'Half yearly',
         description: ''
     },
     {
-        value: 'model', label: 'Model Exam', short: 'Model',
+        value: 'model', label: 'Model', short: 'Model',
         description: ''
     },
     {
