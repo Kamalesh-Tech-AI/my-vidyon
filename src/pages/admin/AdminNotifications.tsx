@@ -1,7 +1,7 @@
-import { InstitutionLayout } from "@/layouts/InstitutionLayout";
-import { Badge } from "@/components/ui/badge";
+import { AdminLayout } from "@/layouts/AdminLayout";
+import { Badge } from "@/components/common/Badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bell, FileText, Clock, CheckCircle2, Megaphone, BarChart3, CreditCard, ArrowLeft, MessageSquare, Loader2, ExternalLink, User, Mail, StickyNote } from "lucide-react";
+import { Bell, FileText, Clock, CheckCircle2, Megaphone, BarChart3, CreditCard, ArrowLeft, MessageSquare, Loader2, ExternalLink, User, Mail, StickyNote, Building2 } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -17,15 +17,16 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/common/PageHeader";
 
-export function InstitutionNotifications() {
+export function AdminNotifications() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const queryClient = useQueryClient();
     const [selectedNotification, setSelectedNotification] = useState<any>(null);
 
     const { data: notifications, isLoading } = useQuery({
-        queryKey: ['institution-notifications', user?.id],
+        queryKey: ['admin-notifications', user?.id],
         queryFn: async () => {
             if (!user?.id) return [];
             const { data, error } = await supabase
@@ -52,7 +53,7 @@ export function InstitutionNotifications() {
             if (error) throw error;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['institution-notifications'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
             toast.success("All notifications marked as read");
         },
         onError: (err: any) => {
@@ -66,11 +67,12 @@ export function InstitutionNotifications() {
             .update({ read: true })
             .eq('id', id);
 
-        queryClient.invalidateQueries({ queryKey: ['institution-notifications'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
 
         if (notification?.type === 'support') {
             setSelectedNotification(notification);
-        } else if (actionUrl && actionUrl !== '/institution/notifications') {
+        } else if (actionUrl && actionUrl !== '/admin/notifications') {
+            // Check if it's a relative or absolute URL for admin
             navigate(actionUrl);
         }
     };
@@ -78,12 +80,8 @@ export function InstitutionNotifications() {
     const getIcon = (type: string) => {
         switch (type) {
             case 'support': return <MessageSquare className="w-5 h-5 text-amber-500" />;
-            case 'assignment': return <FileText className="w-5 h-5 text-blue-500" />;
-            case 'attendance': return <Clock className="w-5 h-5 text-red-500" />;
-            case 'leave': return <CheckCircle2 className="w-5 h-5 text-green-500" />;
             case 'announcement': return <Megaphone className="w-5 h-5 text-purple-500" />;
-            case 'exam': return <BarChart3 className="w-5 h-5 text-orange-500" />;
-            case 'fee': return <CreditCard className="w-5 h-5 text-yellow-500" />;
+            case 'institution_request': return <Building2 className="w-5 h-5 text-blue-500" />;
             default: return <Bell className="w-5 h-5 text-primary" />;
         }
     };
@@ -91,27 +89,35 @@ export function InstitutionNotifications() {
     const unreadCount = notifications?.filter(n => !n.read).length || 0;
 
     return (
-        <InstitutionLayout>
-            <div className="flex flex-col h-[calc(100vh-100px)] bg-card border rounded-lg shadow-sm mx-auto max-w-5xl my-6">
-                <div className="flex items-center justify-between p-4 sm:p-6 border-b">
-                    <div className="flex items-center gap-3">
-                        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="h-9 w-9 -ml-2">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Button>
-                        <h3 className="font-semibold text-lg flex items-center gap-2">
-                            <Bell className="w-5 h-5" />
-                            Notifications
-                        </h3>
+        <AdminLayout>
+            <PageHeader
+                title="Notifications"
+                subtitle="Manage support queries and platform alerts"
+            />
+
+            <div className="flex flex-col bg-card border rounded-xl shadow-sm h-[calc(100vh-280px)]">
+                <div className="flex items-center justify-between p-4 border-b">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-muted-foreground">{notifications?.length || 0} Total</span>
+                        {unreadCount > 0 && (
+                            <Badge variant="info" className="bg-primary/10 text-primary border-0">
+                                {unreadCount} New
+                            </Badge>
+                        )}
                     </div>
-                    {unreadCount > 0 && (
-                        <Badge variant="secondary" className="bg-warning/10 text-warning hover:bg-warning/20 border-0">
-                            {unreadCount} New
-                        </Badge>
-                    )}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-8"
+                        onClick={() => markAllAsRead.mutate()}
+                        disabled={markAllAsRead.isPending || unreadCount === 0}
+                    >
+                        Mark all as read
+                    </Button>
                 </div>
 
                 <ScrollArea className="flex-1">
-                    <div className="p-4 sm:p-6 space-y-4">
+                    <div className="divide-y divide-border">
                         {isLoading ? (
                             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                                 <Loader2 className="w-8 h-8 animate-spin" />
@@ -127,29 +133,29 @@ export function InstitutionNotifications() {
                                 <div
                                     key={notification.id}
                                     onClick={() => markAsRead(notification.id, notification.action_url, notification)}
-                                    className={`rounded-lg border text-card-foreground shadow-sm p-3 sm:p-4 transition-all hover:bg-muted/50 cursor-pointer border-l-4 touch-active ${!notification.read ? 'border-l-primary bg-primary/5' : 'border-l-transparent bg-card'
+                                    className={`p-4 transition-all hover:bg-muted/30 cursor-pointer border-l-4 ${!notification.read ? 'border-l-primary bg-primary/5' : 'border-l-transparent'
                                         }`}
                                 >
                                     <div className="flex gap-4">
-                                        <div className="p-2 rounded-full h-fit bg-background border shadow-sm">
+                                        <div className="p-2 rounded-lg bg-background border shadow-sm h-fit">
                                             {getIcon(notification.type)}
                                         </div>
-                                        <div className="flex-1 space-y-1">
-                                            <div className="flex justify-between items-start">
-                                                <h4 className={`text-sm font-semibold ${!notification.read ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <h4 className={`text-sm font-semibold truncate ${!notification.read ? 'text-foreground' : 'text-muted-foreground'}`}>
                                                     {notification.title}
                                                 </h4>
                                                 <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
                                                     {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
                                                 </span>
                                             </div>
-                                            <p className="text-sm text-muted-foreground line-clamp-2">
+                                            <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                                                 {notification.message}
                                             </p>
                                             {notification.type === 'support' && (
-                                                <div className="pt-2 flex items-center gap-2 text-xs text-primary font-medium">
+                                                <div className="mt-2 flex items-center gap-2 text-xs text-primary font-medium">
                                                     <ExternalLink className="w-3 h-3" />
-                                                    View Query Details
+                                                    Review Request from {notification.metadata?.institution_name || 'Institution'}
                                                 </div>
                                             )}
                                         </div>
@@ -159,17 +165,6 @@ export function InstitutionNotifications() {
                         )}
                     </div>
                 </ScrollArea>
-
-                <div className="p-4 border-t bg-muted/20 text-center rounded-b-lg">
-                    <Button
-                        variant="link"
-                        className="text-sm text-primary hover:underline h-auto p-0"
-                        onClick={() => markAllAsRead.mutate()}
-                        disabled={markAllAsRead.isPending || unreadCount === 0}
-                    >
-                        Mark all as read
-                    </Button>
-                </div>
             </div>
 
             {/* Support Detail Modal */}
@@ -181,7 +176,8 @@ export function InstitutionNotifications() {
                             Support Query Details
                         </DialogTitle>
                         <DialogDescription>
-                            Submitted {selectedNotification && formatDistanceToNow(new Date(selectedNotification.created_at), { addSuffix: true })}
+                            From {selectedNotification?.metadata?.institution_name || "Unknown Institution"} •
+                            {selectedNotification && formatDistanceToNow(new Date(selectedNotification.created_at), { addSuffix: true })}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -189,7 +185,7 @@ export function InstitutionNotifications() {
                         <div className="space-y-6 py-4">
                             <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
                                 <div className="space-y-1">
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Sender Name</p>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Contact Person</p>
                                     <div className="flex items-center gap-2 text-sm font-medium">
                                         <User className="w-4 h-4 text-muted-foreground" />
                                         {selectedNotification.metadata.sender_name || "Not provided"}
@@ -251,6 +247,6 @@ export function InstitutionNotifications() {
                     </div>
                 </DialogContent>
             </Dialog>
-        </InstitutionLayout>
+        </AdminLayout>
     );
 }

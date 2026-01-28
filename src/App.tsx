@@ -108,6 +108,7 @@ import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminInstitutions } from "./pages/admin/AdminInstitutions";
 import { AddInstitution } from "./pages/admin/AddInstitution";
 import { InstitutionDetail } from "./pages/admin/InstitutionDetail";
+import { AdminNotifications } from "./pages/admin/AdminNotifications";
 
 // Accountant Pages
 import { AccountantFees } from "./pages/accountant/AccountantFees";
@@ -238,6 +239,7 @@ const App = () => {
 
                       <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={['admin']}><AdminInstitutionAnalytics /></ProtectedRoute>} />
                       <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
+                      <Route path="/admin/notifications" element={<ProtectedRoute allowedRoles={['admin']}><AdminNotifications /></ProtectedRoute>} />
 
                       {/* School Admin Routes - Deactivated */}
                       {/* <Route path="/admin/structure" element={<ProtectedRoute allowedRoles={['admin']}><AdminStructure /></ProtectedRoute>} /> */}

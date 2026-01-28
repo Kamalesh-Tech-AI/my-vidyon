@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/i18n/TranslationContext';
 import { LanguageSelector } from '@/components/common/LanguageSelector';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, CheckCircle2, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 
@@ -63,6 +63,10 @@ export function LoginPage() {
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const [institutionEmail, setInstitutionEmail] = useState('');
+  const [senderName, setSenderName] = useState('');
+  const [senderEmail, setSenderEmail] = useState('');
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [isSending, setIsSending] = useState(false);
 
   const handlePasswordChange = async () => {
@@ -108,20 +112,126 @@ export function LoginPage() {
   };
 
   const handleContactSubmit = async () => {
-    if (!contactSubject || !contactMessage) {
-      toast.error("Please fill in all fields");
+    if (!contactSubject || !contactMessage || !institutionEmail || !senderEmail) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
     setIsSending(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsSending(false);
+    console.log('Support Query: Starting submission for institution:', institutionEmail);
+    try {
+      // 1. Find the institution by its admin email, registered email, or institution ID
+      // Quoting the values in .or() helps handle special characters like @ and .
+      const searchVal = institutionEmail.trim();
+      const { data: instData, error: instError } = await supabase
+        .from('institutions')
+        .select('institution_id, id, name')
+        .or(`admin_email.ilike."${searchVal}",email.ilike."${searchVal}",institution_id.ilike."${searchVal}"`)
+        .maybeSingle();
+
+      if (instError) {
+        console.error('Support Query: Database error during lookup:', instError);
+        toast.error("An error occurred while looking up the institution.");
+        setIsSending(false);
+        return;
+      }
+
+      if (!instData) {
+        console.warn('Support Query: No institution found for:', searchVal);
+        toast.error("Institution not found. Please check the institutional email or code.");
+        setIsSending(false);
+        return;
+      }
+      console.log('Support Query: Institution found:', instData.name, '(', instData.institution_id, ')');
+
+      let screenshotUrl = null;
+      // 2. Upload screenshot if exists
+      if (screenshotFile) {
+        const fileExt = screenshotFile.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        console.log('Support Query: Uploading screenshot...');
+        const { error: uploadError } = await supabase.storage
+          .from('support-attachments')
+          .upload(fileName, screenshotFile);
+
+        if (uploadError) {
+          console.error('Support Query: Screenshot upload error:', uploadError);
+          throw uploadError;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('support-attachments')
+          .getPublicUrl(fileName);
+
+        screenshotUrl = publicUrlData.publicUrl;
+      }
+
+      // 3. Create Support Query Record
+      console.log('Support Query: Creating database record...');
+      const { error: queryError } = await supabase
+        .from('support_queries')
+        .insert({
+          institution_id: instData.institution_id,
+          sender_email: senderEmail.trim(),
+          sender_name: senderName.trim(),
+          subject: contactSubject.trim(),
+          message: contactMessage.trim(),
+          screenshot_url: screenshotUrl,
+          status: 'pending'
+        });
+
+      if (queryError) {
+        console.error('Support Query: Database insertion error:', queryError);
+        throw queryError;
+      }
+      console.log('Support Query: Record created successfully');
+
+      // 4. Create Notification for the Institution Admin and Super Admins
+      console.log('Support Query: Fetching admin and super admin profiles for notifications...');
+
+      // Fetch both specific institution admins AND global super admins
+      const { data: targetProfiles } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .or(`institution_id.eq.${instData.institution_id},role.eq.admin`)
+        .in('role', ['admin', 'institution']);
+
+      if (targetProfiles && targetProfiles.length > 0) {
+        console.log(`Support Query: Sending notifications to ${targetProfiles.length} recipients...`);
+        const notifications = targetProfiles.map(profile => ({
+          user_id: profile.id,
+          title: `New Support Query: ${contactSubject}`,
+          message: `[${instData.name}] From: ${senderName || senderEmail}. Issue: ${contactMessage.substring(0, 50)}...`,
+          type: 'support',
+          action_url: profile.role === 'admin' ? '/admin/support' : '/institution/notifications', // Route appropriately
+          metadata: {
+            sender_email: senderEmail.trim(),
+            sender_name: senderName.trim(),
+            screenshot_url: screenshotUrl,
+            subject: contactSubject.trim(),
+            message: contactMessage.trim(),
+            institution_name: instData.name,
+            institution_id: instData.institution_id
+          }
+        }));
+
+        await supabase.from('notifications').insert(notifications);
+      }
+
+      toast.success("Support query sent successfully. The administrator has been notified.");
       setIsContactOpen(false);
-      toast.success("Message sent to administrator successfully.");
       setContactSubject('');
       setContactMessage('');
-    }, 1500);
+      setInstitutionEmail('');
+      setSenderName('');
+      setSenderEmail('');
+      setScreenshotFile(null);
+    } catch (error: any) {
+      console.error('Support submission error:', error);
+      toast.error(error.message || "Failed to send message");
+    } finally {
+      setIsSending(false);
+    }
   };
 
   useEffect(() => {
@@ -291,9 +401,38 @@ export function LoginPage() {
                   Need help? Send a message to the system administrator.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="instEmail">Institution's Email *</Label>
+                    <Input
+                      id="instEmail"
+                      placeholder="Admin/School Email"
+                      value={institutionEmail}
+                      onChange={(e) => setInstitutionEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="senderEmail">Your Email *</Label>
+                    <Input
+                      id="senderEmail"
+                      placeholder="Your registered email"
+                      value={senderEmail}
+                      onChange={(e) => setSenderEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="subject">Subject</Label>
+                  <Label htmlFor="senderName">Your Name</Label>
+                  <Input
+                    id="senderName"
+                    placeholder="Enter your full name"
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subject">Subject *</Label>
                   <Input
                     id="subject"
                     placeholder="e.g. Account Access Issue"
@@ -302,14 +441,40 @@ export function LoginPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="message">Message</Label>
+                  <Label htmlFor="message">Message *</Label>
                   <Textarea
                     id="message"
-                    placeholder="Describe your issue..."
+                    placeholder="Describe your issue in detail..."
                     className="min-h-[100px]"
                     value={contactMessage}
                     onChange={(e) => setContactMessage(e.target.value)}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Screenshot (Optional)</Label>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      type="button"
+                      className="w-full relative overflow-hidden h-10 gap-2"
+                      onClick={() => document.getElementById('screenshot-upload')?.click()}
+                    >
+                      <Upload className="w-4 h-4 text-muted-foreground" />
+                      {screenshotFile ? screenshotFile.name : "Upload Screenshot"}
+                      <input
+                        id="screenshot-upload"
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) => setScreenshotFile(e.target.files?.[0] || null)}
+                      />
+                    </Button>
+                    {screenshotFile && (
+                      <Button variant="ghost" size="sm" onClick={() => setScreenshotFile(null)} className="h-10 text-destructive">
+                        Remove
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
               <DialogFooter>
