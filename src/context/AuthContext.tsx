@@ -373,17 +373,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Set flag to prevent duplicate profile fetch in onAuthStateChange
       isLoggingIn.current = true;
 
-      // Add timeout to prevent infinite hang (shortened to 20s for better UX)
-      const authPromise = supabase.auth.signInWithPassword({
+      // Direct authentication without timeout wrapper (timeout was causing abort signals)
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
       });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Login request timed out after 20 seconds. This usually means a weak internet connection or that the database is momentarily busy. Please try again.')), 20000)
-      );
-
-      const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
 
       if (error) {
         console.error('[AUTH] Supabase auth error:', error);
