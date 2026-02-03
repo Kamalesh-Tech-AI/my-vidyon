@@ -62,7 +62,7 @@ export function AccountantDashboard() {
             };
         },
         enabled: !!user?.institutionId,
-        refetchInterval: 30000, // Fallback: refetch every 30 seconds
+        // Removed refetchInterval - using real-time subscriptions instead
     });
 
     // Real-time subscription for student_fees changes

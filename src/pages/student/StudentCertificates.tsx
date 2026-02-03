@@ -54,7 +54,7 @@ export function StudentCertificates() {
             return data || [];
         },
         enabled: !!user?.email,
-        refetchInterval: 30000, // Refetch every 30 seconds
+        // Removed refetchInterval - using real-time subscriptions instead
     });
 
     // Subscribe to real-time updates

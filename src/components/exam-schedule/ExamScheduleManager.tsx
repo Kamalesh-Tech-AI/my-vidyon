@@ -130,7 +130,7 @@ export function ExamScheduleManager({ classId, className, section }: ExamSchedul
             return data || [];
         },
         enabled: !!user?.institutionId && !!selectedClass && !!selectedSection && classes.length > 0,
-        refetchInterval: 3000, // Refetch every 3 seconds for realtime effect
+        // Removed refetchInterval - using real-time subscriptions instead
     });
 
     // Fetch all exam schedules for history (all classes)

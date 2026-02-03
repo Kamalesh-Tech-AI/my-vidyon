@@ -191,8 +191,7 @@ export function StudentExamScheduleView() {
             return data || [];
         },
         enabled: !!user?.institutionId && !!studentInfo?.class_id && !!studentInfo?.section,
-        staleTime: 5000, // Cache for 5 seconds
-        refetchInterval: 10000, // Auto-refetch every 10 seconds for realtime effect
+        // Removed refetchInterval - using real-time subscriptions instead
     });
 
     // Realtime subscription for exam schedules

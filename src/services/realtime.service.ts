@@ -12,21 +12,110 @@ class RealtimeService {
     private channels: Map<string, RealtimeChannel> = new Map();
     private subscriptions: Map<string, Set<EventHandler>> = new Map();
     private isConnected: boolean = false;
+    private reconnectAttempts: number = 0;
+    private maxReconnectAttempts: number = 5;
+    private reconnectDelay: number = 1000; // Start with 1 second
+    private heartbeatInterval: NodeJS.Timeout | null = null;
+    private connectionHealthy: boolean = true;
 
     /**
-     * Initialize real-time connection
+     * Initialize real-time connection with health monitoring
      */
     async connect() {
         try {
             console.log('🔌 Connecting to Supabase Realtime...');
             this.isConnected = true;
+            this.reconnectAttempts = 0;
+            this.startHeartbeat();
             console.log('✅ Connected to Supabase Realtime');
             return true;
         } catch (error) {
             console.error('❌ Failed to connect to Supabase Realtime:', error);
             this.isConnected = false;
+            this.attemptReconnect();
             return false;
         }
+    }
+
+    /**
+     * Start heartbeat to monitor connection health
+     */
+    private startHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+
+        this.heartbeatInterval = setInterval(() => {
+            // Check if any channels are in error state
+            let hasErrors = false;
+            this.channels.forEach((channel) => {
+                const state = (channel as any).state;
+                if (state === 'errored' || state === 'closed') {
+                    hasErrors = true;
+                }
+            });
+
+            if (hasErrors && this.connectionHealthy) {
+                console.warn('⚠️ Connection health degraded, attempting reconnect...');
+                this.connectionHealthy = false;
+                this.attemptReconnect();
+            } else if (!hasErrors && !this.connectionHealthy) {
+                console.log('✅ Connection health restored');
+                this.connectionHealthy = true;
+                this.reconnectAttempts = 0;
+            }
+        }, 30000); // Check every 30 seconds
+    }
+
+    /**
+     * Attempt to reconnect with exponential backoff
+     */
+    private attemptReconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('❌ Max reconnection attempts reached');
+            return;
+        }
+
+        const delay = Math.min(
+            this.reconnectDelay * Math.pow(2, this.reconnectAttempts),
+            30000 // Max 30 seconds
+        );
+
+        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+
+        setTimeout(() => {
+            this.reconnectAttempts++;
+            this.reconnectAllChannels();
+        }, delay);
+    }
+
+    /**
+     * Reconnect all existing channels
+     */
+    private reconnectAllChannels() {
+        console.log('🔄 Reconnecting all channels...');
+
+        // Store current subscriptions
+        const currentSubscriptions = new Map(this.subscriptions);
+
+        // Clear existing channels
+        this.channels.forEach((channel) => {
+            supabase.removeChannel(channel);
+        });
+        this.channels.clear();
+
+        // Recreate subscriptions
+        currentSubscriptions.forEach((handlers, channelName) => {
+            const [, tableName] = channelName.split(':');
+            handlers.forEach((handler) => {
+                // Re-subscribe using the original handler
+                // Note: This is a simplified version, you might need to store filter info
+                this.subscribeToTable(tableName, handler);
+            });
+        });
+
+        this.isConnected = true;
+        console.log('✅ All channels reconnected');
     }
 
     /**

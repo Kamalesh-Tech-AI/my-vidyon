@@ -20,7 +20,27 @@ if (!isSupabaseConfigured()) {
 
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder'
+  supabaseAnonKey || 'placeholder',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10, // Rate limit for real-time events
+      },
+    },
+    global: {
+      headers: {
+        'x-client-info': 'myvidyon-web',
+      },
+    },
+    db: {
+      schema: 'public',
+    },
+  }
 );
 
 // Test Supabase connection
