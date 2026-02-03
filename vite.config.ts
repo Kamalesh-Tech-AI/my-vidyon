@@ -58,67 +58,55 @@ export default defineConfig(({ mode }) => ({
       output: {
         // Optimized manual chunks for better caching
         manualChunks: (id) => {
-          // Node modules chunking
+          // Core vendor libraries - keep React together to avoid circular deps
           if (id.includes('node_modules')) {
-            // React core
+            // Keep all React-related packages together
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-              return 'react-vendor';
+              return 'vendor';
             }
-            // UI library
-            if (id.includes('@radix-ui')) {
-              return 'ui-vendor';
+
+            // Supabase and auth
+            if (id.includes('@supabase') || id.includes('jose') || id.includes('whatwg-url')) {
+              return 'supabase';
             }
-            // Charts
-            if (id.includes('recharts')) {
-              return 'chart-vendor';
+
+            // UI libraries
+            if (
+              id.includes('@radix-ui') ||
+              id.includes('class-variance-authority') ||
+              id.includes('clsx') ||
+              id.includes('tailwind-merge')
+            ) {
+              return 'ui';
             }
-            // React Query
-            if (id.includes('@tanstack/react-query')) {
-              return 'query-vendor';
+
+            // Charts and visualization
+            if (id.includes('recharts') || id.includes('d3-')) {
+              return 'charts';
             }
-            // Supabase
-            if (id.includes('@supabase')) {
-              return 'supabase-vendor';
+
+            // Other large libraries
+            if (id.includes('date-fns') || id.includes('lucide-react')) {
+              return 'utils';
             }
-            // Framer Motion
-            if (id.includes('framer-motion')) {
-              return 'animation-vendor';
-            }
-            // Other node_modules
+
+            // Everything else goes to vendor
             return 'vendor';
           }
 
-          // Dashboard-specific chunks (lazy loaded via routes)
-          if (id.includes('/pages/student/')) {
-            return 'dashboard-student';
-          }
-          if (id.includes('/pages/faculty/')) {
-            return 'dashboard-faculty';
-          }
-          if (id.includes('/pages/institution/')) {
-            return 'dashboard-institution';
-          }
-          if (id.includes('/pages/admin/')) {
-            return 'dashboard-admin';
-          }
-          if (id.includes('/pages/parent/')) {
-            return 'dashboard-parent';
-          }
-          if (id.includes('/pages/accountant/')) {
-            return 'dashboard-accountant';
-          }
-          if (id.includes('/pages/canteen/')) {
-            return 'dashboard-canteen';
+          // Application code splitting by route
+          if (id.includes('/src/pages/')) {
+            if (id.includes('/admin/')) return 'admin';
+            if (id.includes('/institution/')) return 'institution';
+            if (id.includes('/faculty/')) return 'faculty';
+            if (id.includes('/student/')) return 'student';
+            if (id.includes('/parent/')) return 'parent';
           }
 
           // Common components
-          if (id.includes('/components/common/') || id.includes('/components/ui/')) {
-            return 'components-common';
-          }
-          if (id.includes('/components/')) {
+          if (id.includes('/src/components/')) {
             return 'components';
           }
-
           // Hooks
           if (id.includes('/hooks/')) {
             return 'hooks';
