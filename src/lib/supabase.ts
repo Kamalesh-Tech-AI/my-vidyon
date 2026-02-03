@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { applySupabaseInterceptor } from './httpInterceptor';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -18,7 +19,7 @@ if (!isSupabaseConfigured()) {
   console.error('❌ Cannot initialize Supabase client with invalid configuration');
 }
 
-export const supabase = createClient(
+const supabaseClient = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder',
   {
@@ -42,6 +43,9 @@ export const supabase = createClient(
     },
   }
 );
+
+// Apply HTTP interceptor for non-blocking request tracking
+export const supabase = applySupabaseInterceptor(supabaseClient);
 
 // Test Supabase connection
 export const testSupabaseConnection = async (): Promise<{ success: boolean; error?: string }> => {

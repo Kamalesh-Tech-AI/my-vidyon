@@ -153,6 +153,17 @@ export default defineConfig(({ mode }) => ({
     cssCodeSplit: true,
     // Target modern browsers for smaller bundles
     target: 'es2020',
+    // Module preload for faster initial load
+    modulePreload: {
+      polyfill: true,
+      resolveDependencies: (filename, deps, { hostId, hostType }) => {
+        // Preload critical chunks
+        return deps.filter(dep => {
+          // Always preload vendor and UI chunks
+          return dep.includes('vendor') || dep.includes('ui') || dep.includes('supabase');
+        });
+      },
+    },
   },
   // Performance optimizations
   esbuild: {

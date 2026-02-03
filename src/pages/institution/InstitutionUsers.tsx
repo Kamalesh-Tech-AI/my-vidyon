@@ -65,8 +65,7 @@ export function InstitutionUsers() {
             return data || [];
         },
         enabled: !!user?.institutionId,
-        refetchOnMount: 'always',
-        refetchOnWindowFocus: true
+        refetchOnMount: 'always'
     });
 
     const { data: institutionStaff = [], isLoading: isStaffLoading } = useQuery({
@@ -86,8 +85,7 @@ export function InstitutionUsers() {
             return (data || []).filter((p: any) => targetRoles.includes(p.role));
         },
         enabled: !!user?.institutionId,
-        refetchOnMount: 'always',
-        refetchOnWindowFocus: true
+        refetchOnMount: 'always'
     });
 
     const { data: institutionParents = [], isLoading: isParentsLoading } = useQuery({
@@ -103,8 +101,7 @@ export function InstitutionUsers() {
             return data || [];
         },
         enabled: !!user?.institutionId,
-        refetchOnMount: 'always',
-        refetchOnWindowFocus: true
+        refetchOnMount: 'always'
     });
 
     // --- REALTIME SUBSCRIPTION ---
