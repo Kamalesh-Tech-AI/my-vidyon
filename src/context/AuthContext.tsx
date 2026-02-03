@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timed out after 15 seconds')), 15000)
+        setTimeout(() => reject(new Error('Profile fetch timed out after 30 seconds')), 30000)
       );
 
       const profileFetchPromise = (async () => {
@@ -71,29 +71,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return adminUser;
         }
 
-        // OPTIMIZATION 2: Check institution status (with caching)
+        // OPTIMIZATION 2: Check institution status (with caching, non-blocking)
         if (profile?.institution_id) {
-          const instCacheKey = `inst_${profile.institution_id}`;
-          let institutionStatus = authCache.get<string>(instCacheKey);
+          try {
+            const instCacheKey = `inst_${profile.institution_id}`;
+            let institutionStatus = authCache.get<string>(instCacheKey);
 
-          if (!institutionStatus) {
-            const { data: institution } = await supabase
-              .from('institutions')
-              .select('status')
-              .eq('institution_id', profile.institution_id)
-              .maybeSingle();
+            if (!institutionStatus) {
+              const { data: institution, error: instError } = await supabase
+                .from('institutions')
+                .select('status')
+                .eq('institution_id', profile.institution_id)
+                .maybeSingle();
 
-            institutionStatus = institution?.status || 'active';
-            authCache.set(instCacheKey, institutionStatus, CACHE_TTL.INSTITUTION_STATUS);
-          }
+              if (instError) {
+                console.warn('[AUTH] Institution status check failed (continuing):', instError);
+                institutionStatus = 'active'; // Default to active if check fails
+              } else {
+                institutionStatus = institution?.status || 'active';
+              }
 
-          if (institutionStatus === 'inactive') {
-            console.error('🚫 [AUTH] Institution is INACTIVE');
-            throw new Error('INSTITUTION_INACTIVE');
-          }
-          if (institutionStatus === 'deleted') {
-            console.error('🚫 [AUTH] Institution is DELETED');
-            throw new Error('INSTITUTION_DELETED');
+              authCache.set(instCacheKey, institutionStatus, CACHE_TTL.INSTITUTION_STATUS);
+            }
+
+            if (institutionStatus === 'inactive') {
+              console.error('🚫 [AUTH] Institution is INACTIVE');
+              throw new Error('INSTITUTION_INACTIVE');
+            }
+            if (institutionStatus === 'deleted') {
+              console.error('🚫 [AUTH] Institution is DELETED');
+              throw new Error('INSTITUTION_DELETED');
+            }
+          } catch (error: any) {
+            // Re-throw blocking errors
+            if (error.message === 'INSTITUTION_INACTIVE' || error.message === 'INSTITUTION_DELETED') {
+              throw error;
+            }
+            // Log other errors but don't block login
+            console.warn('[AUTH] Institution status check error (continuing):', error);
           }
         }
 
@@ -197,6 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     } catch (err: any) {
       console.error('Profile fetch error:', err);
+
+      // Handle abort signal errors
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        console.warn('[AUTH] Request was aborted, likely due to timeout');
+        return null;
+      }
+
       if (err.message === 'INSTITUTION_INACTIVE' || err.message === 'INSTITUTION_DELETED' || err.message === 'USER_DISABLED') {
         throw err; // Re-throw blocking errors
       }
