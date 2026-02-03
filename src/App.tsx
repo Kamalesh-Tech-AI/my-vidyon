@@ -1,4 +1,5 @@
 import { SearchProvider } from "@/context/SearchContext";
+import type { Session } from '@supabase/supabase-js';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -119,7 +120,11 @@ const AccountantDashboard = lazy(() => import("./pages/accountant/AccountantDash
 const CanteenDashboard = lazy(() => import("./pages/canteen/CanteenDashboard").then(m => ({ default: m.CanteenDashboard })));
 const CanteenSettings = lazy(() => import("./pages/canteen/CanteenSettings").then(m => ({ default: m.CanteenSettings })));
 
-const App = () => {
+interface AppProps {
+  initialSession?: Session | null;
+}
+
+const App = ({ initialSession }: AppProps) => {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -129,7 +134,7 @@ const App = () => {
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <AuthProvider>
+              <AuthProvider initialSession={initialSession}>
                 <WebSocketProvider>
                   <SearchProvider>
                     <InstitutionProvider>

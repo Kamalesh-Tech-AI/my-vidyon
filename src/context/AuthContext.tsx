@@ -3,6 +3,7 @@ import { User, UserRole, AuthState, LoginCredentials, ROLE_ROUTES } from '@/type
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { toast } from 'sonner';
+import type { Session } from '@supabase/supabase-js';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -12,11 +13,29 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
+export function AuthProvider({
+  children,
+  initialSession
+}: {
+  children: React.ReactNode;
+  initialSession?: Session | null;
+}) {
+  // Initialize state based on whether we have a session
+  // If session exists, start with loading to fetch profile
+  // If no session, ready immediately (no loading)
+  const [state, setState] = useState<AuthState>(() => {
+    if (initialSession?.user) {
+      return {
+        user: null,
+        isAuthenticated: false,
+        isLoading: true, // Will fetch profile immediately
+      };
+    }
+    return {
+      user: null,
+      isAuthenticated: false,
+      isLoading: false, // No session, ready immediately
+    };
   });
   const navigate = useNavigate();
 
@@ -182,6 +201,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     userRef.current = state.user;
   }, [state.user]);
+
+  // Hydrate auth immediately if we have an initial session
+  useEffect(() => {
+    if (!initialSession?.user) return;
+
+    console.log('[AUTH] Hydrating from initial session:', initialSession.user.email);
+
+    // Fetch profile immediately
+    fetchUserProfile(initialSession.user.id, initialSession.user.email!)
+      .then(user => {
+        if (user) {
+          console.log('[AUTH] Initial hydration successful, role:', user.role);
+          setState({ user, isAuthenticated: true, isLoading: false });
+        } else {
+          console.error('[AUTH] Initial hydration failed - no profile found');
+          setState({ user: null, isAuthenticated: false, isLoading: false });
+        }
+      })
+      .catch(error => {
+        console.error('[AUTH] Initial hydration error:', error);
+        setState({ user: null, isAuthenticated: false, isLoading: false });
+      });
+  }, [initialSession, fetchUserProfile]);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
