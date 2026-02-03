@@ -346,7 +346,7 @@ export function InstitutionUsers() {
                                                     </td>
                                                     <td className="p-4">
                                                         <div className="flex items-center gap-2">
-                                                            <Button variant="ghost" size="sm" onClick={() => navigate(`/institution/student/${student.id}`)}>
+                                                            <Button variant="ghost" size="sm" onClick={() => navigate(`/institution/students/${student.id}`)}>
                                                                 View Details
                                                             </Button>
                                                             <Button
