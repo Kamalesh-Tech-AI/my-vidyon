@@ -178,6 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const userRef = useRef(state.user);
+  const isLoggingIn = useRef(false); // Flag to prevent duplicate fetches during login
+
   useEffect(() => {
     userRef.current = state.user;
   }, [state.user]);
@@ -195,6 +197,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log(`🔄 [AUTH] Event: ${event}`);
 
       if (session) {
+        // Skip profile fetch if we're in the middle of a login (prevents duplicate fetches)
+        if (isLoggingIn.current && event === 'SIGNED_IN') {
+          console.log('[AUTH] Skipping duplicate profile fetch during login');
+          isLoggingIn.current = false;
+          return;
+        }
+
         // If we already have the same user and it's just a token refresh (not SIGNED_IN), 
         // we can skip the heavy profile fetch to avoid transient network issues logging the user out.
         if (userRef.current?.id === session.user.id && event !== 'SIGNED_IN' && !isInitialLoad) {
@@ -361,6 +370,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('[AUTH] Calling Supabase signInWithPassword');
 
+      // Set flag to prevent duplicate profile fetch in onAuthStateChange
+      isLoggingIn.current = true;
+
       // Add timeout to prevent infinite hang (shortened to 20s for better UX)
       const authPromise = supabase.auth.signInWithPassword({
         email: credentials.email,
@@ -375,22 +387,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('[AUTH] Supabase auth error:', error);
+        isLoggingIn.current = false; // Reset flag on error
         throw error;
       }
 
       console.log('[AUTH] Auth successful, user ID:', data.user?.id);
 
       if (!data.user?.email) {
+        isLoggingIn.current = false; // Reset flag on error
         throw new Error("User email not found");
       }
 
       console.log('[AUTH] Fetching user profile...');
-      const profilePromise = fetchUserProfile(data.user.id, data.user.email);
-      const profileTimeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Retrieving user profile timed out. The database might be slow or your connection dropped.')), 25000)
-      );
-
-      const user = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
+      const user = await fetchUserProfile(data.user.id, data.user.email);
 
       if (user) {
         console.log('[AUTH] Profile found, role:', user.role);
@@ -403,11 +412,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         navigate(ROLE_ROUTES[user.role]);
       } else {
         console.error('[AUTH] No profile found in database');
+        isLoggingIn.current = false; // Reset flag before sign out
         await supabase.auth.signOut();
         throw new Error("Profile not found. Please contact your administrator.");
       }
     } catch (error: any) {
       console.error('[AUTH] Login error:', error);
+      isLoggingIn.current = false; // Reset flag on error
       setState(prev => ({ ...prev, isLoading: false }));
 
       // Handle specific error cases
