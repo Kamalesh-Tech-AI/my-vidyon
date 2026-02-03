@@ -39,24 +39,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       const profileFetchPromise = (async () => {
-        // OPTIMIZATION 1: Fetch profile with institution data in ONE query using join
-        const { data: profile } = await supabase
+        // Fetch profile without join (join was causing timeout)
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select(`
-            id, 
-            email, 
-            full_name, 
-            role, 
-            institution_id, 
-            is_active, 
-            phone,
-            institutions (
-              status,
-              institution_id
-            )
-          `)
+          .select('id, email, full_name, role, institution_id, is_active, phone')
           .eq('id', userId)
           .maybeSingle();
+
+        if (profileError) {
+          console.error('[AUTH] Profile fetch error:', profileError);
+          throw profileError;
+        }
 
         // Check if profile is active
         if (profile?.is_active === false) {
@@ -64,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw new Error('USER_DISABLED');
         }
 
-        // OPTIMIZATION 2: Early return for Super Admin (skip role detection)
+        // OPTIMIZATION 1: Early return for Super Admin (skip role detection)
         if (profile?.role === 'admin') {
           const adminUser = {
             id: userId,
@@ -78,24 +71,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return adminUser;
         }
 
-        // OPTIMIZATION 3: Check institution status from joined data (no extra query needed)
-        const institutionData = Array.isArray(profile?.institutions)
-          ? profile.institutions[0]
-          : profile?.institutions;
+        // OPTIMIZATION 2: Check institution status (with caching)
+        if (profile?.institution_id) {
+          const instCacheKey = `inst_${profile.institution_id}`;
+          let institutionStatus = authCache.get<string>(instCacheKey);
 
-        if (institutionData) {
-          const status = institutionData.status || 'active';
-          if (status === 'inactive') {
+          if (!institutionStatus) {
+            const { data: institution } = await supabase
+              .from('institutions')
+              .select('status')
+              .eq('institution_id', profile.institution_id)
+              .maybeSingle();
+
+            institutionStatus = institution?.status || 'active';
+            authCache.set(instCacheKey, institutionStatus, CACHE_TTL.INSTITUTION_STATUS);
+          }
+
+          if (institutionStatus === 'inactive') {
             console.error('🚫 [AUTH] Institution is INACTIVE');
             throw new Error('INSTITUTION_INACTIVE');
           }
-          if (status === 'deleted') {
+          if (institutionStatus === 'deleted') {
             console.error('🚫 [AUTH] Institution is DELETED');
             throw new Error('INSTITUTION_DELETED');
           }
         }
 
-        // OPTIMIZATION 4: If profile has a valid role, use it (skip role detection queries)
+        // OPTIMIZATION 3: If profile has a valid role, use it (skip role detection queries)
         const validRoles: UserRole[] = ['student', 'faculty', 'parent', 'institution', 'accountant', 'canteen_manager'];
         if (profile?.role && validRoles.includes(profile.role as UserRole)) {
           const user = {
