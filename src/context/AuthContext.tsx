@@ -3,7 +3,6 @@ import { User, UserRole, AuthState, LoginCredentials, ROLE_ROUTES } from '@/type
 import { useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { authCache, CACHE_TTL } from '@/lib/authCache';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -25,202 +24,154 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AUTH] Fetching profile for:', email);
 
-      // Check cache first
-      const cacheKey = `profile_${userId}`;
-      const cached = authCache.get<User>(cacheKey);
-      if (cached) {
-        console.log('[AUTH] Using cached profile');
-        return cached;
+      // Simple profile fetch without caching (caching was causing issues)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, institution_id, is_active, phone')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('[AUTH] Profile fetch error:', profileError);
+        throw profileError;
       }
 
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timed out after 30 seconds')), 30000)
-      );
+      // Check if profile is active
+      if (profile?.is_active === false) {
+        console.error('🚫 [AUTH] Profile is disabled');
+        throw new Error('USER_DISABLED');
+      }
 
-      const profileFetchPromise = (async () => {
-        // Fetch profile without join (join was causing timeout)
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, email, full_name, role, institution_id, is_active, phone')
-          .eq('id', userId)
-          .maybeSingle();
+      // Early return for Super Admin
+      if (profile?.role === 'admin') {
+        return {
+          id: userId,
+          email: email,
+          name: profile.full_name || email.split('@')[0],
+          role: 'admin' as UserRole,
+          institutionId: profile.institution_id,
+          forcePasswordChange: false
+        };
+      }
 
-        if (profileError) {
-          console.error('[AUTH] Profile fetch error:', profileError);
-          throw profileError;
-        }
-
-        // Check if profile is active
-        if (profile?.is_active === false) {
-          console.error('🚫 [AUTH] Profile is disabled');
-          throw new Error('USER_DISABLED');
-        }
-
-        // OPTIMIZATION 1: Early return for Super Admin (skip role detection)
-        if (profile?.role === 'admin') {
-          const adminUser = {
-            id: userId,
-            email: email,
-            name: profile.full_name || email.split('@')[0],
-            role: 'admin' as UserRole,
-            institutionId: profile.institution_id,
-            forcePasswordChange: false
-          };
-          authCache.set(cacheKey, adminUser, CACHE_TTL.USER_PROFILE);
-          return adminUser;
-        }
-
-        // OPTIMIZATION 2: Check institution status (with caching, non-blocking)
-        if (profile?.institution_id) {
+      // If profile has a valid role, use it
+      const validRoles: UserRole[] = ['student', 'faculty', 'parent', 'institution', 'accountant', 'canteen_manager'];
+      if (profile?.role && validRoles.includes(profile.role as UserRole)) {
+        // Quick institution status check (non-blocking)
+        if (profile.institution_id) {
           try {
-            const instCacheKey = `inst_${profile.institution_id}`;
-            let institutionStatus = authCache.get<string>(instCacheKey);
+            const { data: institution } = await supabase
+              .from('institutions')
+              .select('status')
+              .eq('institution_id', profile.institution_id)
+              .maybeSingle();
 
-            if (!institutionStatus) {
-              const { data: institution, error: instError } = await supabase
-                .from('institutions')
-                .select('status')
-                .eq('institution_id', profile.institution_id)
-                .maybeSingle();
-
-              if (instError) {
-                console.warn('[AUTH] Institution status check failed (continuing):', instError);
-                institutionStatus = 'active'; // Default to active if check fails
-              } else {
-                institutionStatus = institution?.status || 'active';
-              }
-
-              authCache.set(instCacheKey, institutionStatus, CACHE_TTL.INSTITUTION_STATUS);
-            }
-
-            if (institutionStatus === 'inactive') {
-              console.error('🚫 [AUTH] Institution is INACTIVE');
+            const status = institution?.status || 'active';
+            if (status === 'inactive') {
               throw new Error('INSTITUTION_INACTIVE');
             }
-            if (institutionStatus === 'deleted') {
-              console.error('🚫 [AUTH] Institution is DELETED');
+            if (status === 'deleted') {
               throw new Error('INSTITUTION_DELETED');
             }
           } catch (error: any) {
-            // Re-throw blocking errors
             if (error.message === 'INSTITUTION_INACTIVE' || error.message === 'INSTITUTION_DELETED') {
               throw error;
             }
-            // Log other errors but don't block login
-            console.warn('[AUTH] Institution status check error (continuing):', error);
+            console.warn('[AUTH] Institution check failed (continuing):', error);
           }
         }
 
-        // OPTIMIZATION 3: If profile has a valid role, use it (skip role detection queries)
-        const validRoles: UserRole[] = ['student', 'faculty', 'parent', 'institution', 'accountant', 'canteen_manager'];
-        if (profile?.role && validRoles.includes(profile.role as UserRole)) {
-          const user = {
-            id: userId,
-            email: email,
-            name: profile.full_name || email.split('@')[0],
-            role: profile.role as UserRole,
-            institutionId: profile.institution_id,
-            forcePasswordChange: false,
-            phone: profile.phone
-          };
-          authCache.set(cacheKey, user, CACHE_TTL.USER_PROFILE);
-          return user;
-        }
-
-        // OPTIMIZATION 5: Only query role-specific tables if profile role is missing/invalid
-        // Reduced from 4 parallel queries to 3 (removed institution query - already have it)
-        console.log('[AUTH] Profile role missing, detecting from tables...');
-        const [studentRes, parentRes, staffRes] = await Promise.all([
-          supabase.from('students').select('institution_id, is_active, phone, address').eq('email', email).maybeSingle(),
-          supabase.from('parents').select('institution_id, is_active, phone').eq('email', email).maybeSingle(),
-          supabase.from('staff_details').select('institution_id, role').eq('profile_id', userId).maybeSingle()
-        ]);
-
-        let detectedRole: UserRole | null = null;
-        let institutionId: string | undefined = profile?.institution_id;
-        let phone = profile?.phone;
-        let address: string | undefined;
-
-        // Check Student
-        if (studentRes.data) {
-          if (studentRes.data.is_active === false) {
-            console.error('🚫 [AUTH] Student account is disabled');
-            throw new Error('USER_DISABLED');
-          }
-          detectedRole = 'student';
-          institutionId = studentRes.data.institution_id;
-          phone = phone || studentRes.data.phone;
-          address = studentRes.data.address;
-        }
-
-        // Check Parent
-        if (!detectedRole && parentRes.data) {
-          if (parentRes.data.is_active === false) {
-            console.error('🚫 [AUTH] Parent account is disabled');
-            throw new Error('USER_DISABLED');
-          }
-          detectedRole = 'parent';
-          institutionId = parentRes.data.institution_id;
-          phone = phone || parentRes.data.phone;
-        }
-
-        // Check Staff/Faculty
-        if (!detectedRole && staffRes.data) {
-          detectedRole = staffRes.data.role as UserRole;
-          institutionId = staffRes.data.institution_id;
-        }
-
-        if (!detectedRole) {
-          console.error('No role detected for user');
-          return null;
-        }
-
-        // OPTIMIZATION 6: Fire-and-forget profile sync (don't wait for it)
-        if (profile && profile.role !== detectedRole) {
-          void (async () => {
-            try {
-              await supabase.from('profiles')
-                .update({ role: detectedRole, institution_id: institutionId })
-                .eq('id', userId);
-              console.log('[AUTH] Profile role synced');
-            } catch (err) {
-              console.warn('[AUTH] Profile sync failed:', err);
-            }
-          })();
-        }
-
-        const user = {
+        return {
           id: userId,
           email: email,
-          name: profile?.full_name || email.split('@')[0],
-          role: detectedRole,
-          institutionId: institutionId,
+          name: profile.full_name || email.split('@')[0],
+          role: profile.role as UserRole,
+          institutionId: profile.institution_id,
           forcePasswordChange: false,
-          phone: phone,
-          address: address
+          phone: profile.phone
         };
+      }
 
-        // Cache the result
-        authCache.set(cacheKey, user, CACHE_TTL.USER_PROFILE);
-        return user;
-      })();
+      // Role detection from tables (only if profile role is missing)
+      console.log('[AUTH] Profile role missing, detecting from tables...');
+      const [studentRes, parentRes, staffRes] = await Promise.all([
+        supabase.from('students').select('institution_id, is_active, phone, address').eq('email', email).maybeSingle(),
+        supabase.from('parents').select('institution_id, is_active, phone').eq('email', email).maybeSingle(),
+        supabase.from('staff_details').select('institution_id, role').eq('profile_id', userId).maybeSingle()
+      ]);
 
-      // Race between profile fetch and timeout
-      const result = await Promise.race([profileFetchPromise, timeoutPromise]);
-      return result as User | null;
+      let detectedRole: UserRole | null = null;
+      let institutionId: string | undefined = profile?.institution_id;
+      let phone = profile?.phone;
+      let address: string | undefined;
+
+      // Check Student
+      if (studentRes.data) {
+        if (studentRes.data.is_active === false) {
+          throw new Error('USER_DISABLED');
+        }
+        detectedRole = 'student';
+        institutionId = studentRes.data.institution_id;
+        phone = phone || studentRes.data.phone;
+        address = studentRes.data.address;
+      }
+
+      // Check Parent
+      if (!detectedRole && parentRes.data) {
+        if (parentRes.data.is_active === false) {
+          throw new Error('USER_DISABLED');
+        }
+        detectedRole = 'parent';
+        institutionId = parentRes.data.institution_id;
+        phone = phone || parentRes.data.phone;
+      }
+
+      // Check Staff/Faculty
+      if (!detectedRole && staffRes.data) {
+        detectedRole = staffRes.data.role as UserRole;
+        institutionId = staffRes.data.institution_id;
+      }
+
+      if (!detectedRole) {
+        console.error('No role detected for user');
+        return null;
+      }
+
+      // Sync profile role (fire and forget)
+      if (profile && profile.role !== detectedRole) {
+        void (async () => {
+          try {
+            await supabase.from('profiles')
+              .update({ role: detectedRole, institution_id: institutionId })
+              .eq('id', userId);
+          } catch (err) {
+            console.warn('[AUTH] Profile sync failed:', err);
+          }
+        })();
+      }
+
+      return {
+        id: userId,
+        email: email,
+        name: profile?.full_name || email.split('@')[0],
+        role: detectedRole,
+        institutionId: institutionId,
+        forcePasswordChange: false,
+        phone: phone,
+        address: address
+      };
 
     } catch (err: any) {
       console.error('Profile fetch error:', err);
 
       // Handle abort signal errors
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-        console.warn('[AUTH] Request was aborted, likely due to timeout');
+        console.warn('[AUTH] Request was aborted');
         return null;
       }
 
       if (err.message === 'INSTITUTION_INACTIVE' || err.message === 'INSTITUTION_DELETED' || err.message === 'USER_DISABLED') {
-        throw err; // Re-throw blocking errors
+        throw err;
       }
       return null;
     }
@@ -520,9 +471,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: false,
         isLoading: false,
       });
-
-      // Clear auth cache to prevent stale data
-      authCache.clearAll();
 
       // Success toast
       toast.success('Logged out successfully', {
