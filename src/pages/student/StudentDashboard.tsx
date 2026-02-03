@@ -14,6 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/i18n/TranslationContext';
 import { supabase } from '@/lib/supabase';
 import { useStudentDashboard } from '@/hooks/useStudentDashboard';
+import { SkeletonDashboard, SkeletonStatCard } from '@/components/common/Skeleton';
 import {
   BookOpen,
   Clock,
@@ -33,7 +34,7 @@ export function StudentDashboard() {
   const { t } = useTranslation();
 
   // Fetch Student Profile
-  const { data: studentProfile } = useQuery({
+  const { data: studentProfile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile', user?.id],
     queryFn: async () => {
       if (!user?.email) return null;
@@ -59,11 +60,14 @@ export function StudentDashboard() {
     staleTime: 1000 * 60,
   });
 
-  // Use the hook for all data
-  const { stats, assignments, attendanceRecords, grades, subjects } = useStudentDashboard(
+  // Use the optimized hook for all data
+  const { stats, assignments, attendanceRecords, grades, subjects, isLoading: dashboardLoading } = useStudentDashboard(
     studentProfile?.id,
     studentProfile?.institution_id
   );
+
+  // Combined loading state
+  const isLoading = profileLoading || dashboardLoading;
 
   // Get today's attendance status
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -99,6 +103,19 @@ export function StudentDashboard() {
     { name: 'Graded', value: grades.length },
     { name: 'Pending', value: assignments.filter(a => a.status === 'pending').length },
   ];
+
+  // Show skeleton loading state
+  if (isLoading) {
+    return (
+      <StudentLayout>
+        <PageHeader
+          title={`${t.common.welcome}, ${user?.name?.split(' ')[0] || 'Student'}!`}
+          subtitle={t.dashboard.overview}
+        />
+        <SkeletonDashboard />
+      </StudentLayout>
+    );
+  }
 
   return (
     <StudentLayout>

@@ -6,7 +6,7 @@ import { CourseCard } from '@/components/cards/CourseCard';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useFacultyDashboard } from '@/hooks/useFacultyDashboard';
-import Loader from '@/components/common/Loader';
+import { SkeletonDashboard, SkeletonStatCard } from '@/components/common/Skeleton';
 import {
   Users,
   BookOpen,
@@ -30,12 +30,15 @@ export function FacultyDashboard() {
     user?.institutionId
   );
 
-  // No longer using intentional delay for loader
-
+  // Show skeleton while loading
   if (isLoading) {
     return (
       <FacultyLayout>
-        <Loader fullScreen={false} />
+        <PageHeader
+          title={`Good morning, ${user?.name?.split(' ')[0] || 'Faculty'}!`}
+          subtitle="Manage your courses and track student progress"
+        />
+        <SkeletonDashboard />
       </FacultyLayout>
     );
   }

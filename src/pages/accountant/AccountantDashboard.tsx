@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/common/Badge';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { SkeletonDashboard, SkeletonStatCard, SkeletonChart } from '@/components/common/Skeleton';
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b'];
 
@@ -174,99 +175,120 @@ export function AccountantDashboard() {
                 }
             />
 
-            {/* Stats Row */}
-            <div className="stats-grid mb-6 sm:mb-8">
-                <StatCard
-                    title="Total Revenue"
-                    value={`₹${(stats?.revenue || 0).toLocaleString()}`}
-                    icon={IndianRupee}
-                    iconColor="text-success"
-                    change="Year to Date"
-                />
-                <StatCard
-                    title="Outstanding Dues"
-                    value={`₹${(stats?.outstanding || 0).toLocaleString()}`}
-                    icon={AlertCircle}
-                    iconColor="text-destructive"
-                    change="Pending Collection"
-                />
-                <StatCard
-                    title="Collection Rate"
-                    value={`${stats?.collectionRate || 0}%`}
-                    icon={TrendingUp}
-                    iconColor="text-primary"
-                    change="Of total expected"
-                />
-                <StatCard
-                    title="Total Students"
-                    value={stats?.studentCount || 0}
-                    icon={Users}
-                    iconColor="text-muted-foreground"
-                    change="Enrolled"
-                />
-            </div>
+            {/* Show skeleton while loading */}
+            {isLoading ? (
+                <>
+                    {/* Stats Skeleton */}
+                    <div className="stats-grid mb-6 sm:mb-8">
+                        <SkeletonStatCard />
+                        <SkeletonStatCard />
+                        <SkeletonStatCard />
+                        <SkeletonStatCard />
+                    </div>
 
-            {/* Main Content Area */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-                {/* Payment Status Chart */}
-                <Card className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
-                    <CardHeader className="px-4 py-3 sm:px-6 sm:py-4">
-                        <CardTitle className="text-base sm:text-lg">Fee Status Distribution</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">Breakdown of student fee records</CardDescription>
-                    </CardHeader>
-                    <CardContent className="h-[280px] sm:h-[300px] px-3 sm:px-6 pb-4 sm:pb-6">
-                        {isLoading ? (
-                            <div className="h-full flex items-center justify-center text-muted-foreground">Loading...</div>
-                        ) : stats?.pieData && stats.pieData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={stats.pieData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                    >
-                                        {stats.pieData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip
-                                        formatter={(value) => [value, 'Students']}
-                                        contentStyle={{ backgroundColor: 'hsl(var(--card))', borderRadius: '8px', border: '1px solid hsl(var(--border))' }}
-                                        itemStyle={{ color: 'hsl(var(--foreground))' }}
-                                    />
-                                    <Legend verticalAlign="bottom" height={36} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div className="h-full flex items-center justify-center text-muted-foreground">No fee records found</div>
-                        )}
-                    </CardContent>
-                </Card>
+                    {/* Charts Skeleton */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+                        <SkeletonChart />
+                        <SkeletonChart />
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Stats Row */}
+                    <div className="stats-grid mb-6 sm:mb-8">
+                        <StatCard
+                            title="Total Revenue"
+                            value={`₹${(stats?.revenue || 0).toLocaleString()}`}
+                            icon={IndianRupee}
+                            iconColor="text-success"
+                            change="Year to Date"
+                        />
+                        <StatCard
+                            title="Outstanding Dues"
+                            value={`₹${(stats?.outstanding || 0).toLocaleString()}`}
+                            icon={AlertCircle}
+                            iconColor="text-destructive"
+                            change="Pending Collection"
+                        />
+                        <StatCard
+                            title="Collection Rate"
+                            value={`${stats?.collectionRate || 0}%`}
+                            icon={TrendingUp}
+                            iconColor="text-primary"
+                            change="Of total expected"
+                        />
+                        <StatCard
+                            title="Total Students"
+                            value={stats?.studentCount || 0}
+                            icon={Users}
+                            iconColor="text-muted-foreground"
+                            change="Enrolled"
+                        />
+                    </div>
 
-                {/* Quick Actions / Recent (Placeholder for now) */}
-                <Card className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
-                    <CardHeader className="px-4 py-3 sm:px-6 sm:py-4">
-                        <CardTitle className="text-base sm:text-lg">Recent Transactions</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">Latest fee payments recorded</CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-3 sm:px-6 pb-4 sm:pb-6">
-                        <div className="space-y-4">
-                            {/* In future, fetch actual transactions table. For now, a placeholder illustrative empty state */}
-                            <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
-                                <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
-                                    <IndianRupee className="w-6 h-6 opacity-30" />
+                    {/* Main Content Area */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+                        {/* Payment Status Chart */}
+                        <Card className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
+                            <CardHeader className="px-4 py-3 sm:px-6 sm:py-4">
+                                <CardTitle className="text-base sm:text-lg">Fee Status Distribution</CardTitle>
+                                <CardDescription className="text-xs sm:text-sm">Breakdown of student fee records</CardDescription>
+                            </CardHeader>
+                            <CardContent className="h-[280px] sm:h-[300px] px-3 sm:px-6 pb-4 sm:pb-6">
+                                {isLoading ? (
+                                    <div className="h-full flex items-center justify-center text-muted-foreground">Loading...</div>
+                                ) : stats?.pieData && stats.pieData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={stats.pieData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={60}
+                                                outerRadius={80}
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                            >
+                                                {stats.pieData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip
+                                                formatter={(value) => [value, 'Students']}
+                                                contentStyle={{ backgroundColor: 'hsl(var(--card))', borderRadius: '8px', border: '1px solid hsl(var(--border))' }}
+                                                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                                            />
+                                            <Legend verticalAlign="bottom" height={36} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-muted-foreground">No fee records found</div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Quick Actions / Recent (Placeholder for now) */}
+                        <Card className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
+                            <CardHeader className="px-4 py-3 sm:px-6 sm:py-4">
+                                <CardTitle className="text-base sm:text-lg">Recent Transactions</CardTitle>
+                                <CardDescription className="text-xs sm:text-sm">Latest fee payments recorded</CardDescription>
+                            </CardHeader>
+                            <CardContent className="px-3 sm:px-6 pb-4 sm:pb-6">
+                                <div className="space-y-4">
+                                    {/* In future, fetch actual transactions table. For now, a placeholder illustrative empty state */}
+                                    <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
+                                        <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
+                                            <IndianRupee className="w-6 h-6 opacity-30" />
+                                        </div>
+                                        <p className="text-sm">No recent transactions to display</p>
+                                        <Button variant="link" onClick={() => navigate('/accountant/fees')} className="mt-2 text-primary">Record a Payment</Button>
+                                    </div>
                                 </div>
-                                <p className="text-sm">No recent transactions to display</p>
-                                <Button variant="link" onClick={() => navigate('/accountant/fees')} className="mt-2 text-primary">Record a Payment</Button>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </>
+            )}
         </InstitutionLayout>
     );
 }

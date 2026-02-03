@@ -1,6 +1,4 @@
-import { useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useERPRealtime } from './useERPRealtime';
 
@@ -22,85 +20,115 @@ interface TodaySchedule {
 }
 
 /**
- * Custom hook for faculty dashboard data with real-time updates
- * Fetches:
- * - Student counts (total and in assigned classes)
- * - Assigned subjects
- * - Today's schedule
- * - Real-time updates for all metrics
+ * OPTIMIZED: Custom hook for faculty dashboard data with parallel queries
+ * Fetches all data in parallel for faster loading
  */
 export function useFacultyDashboard(facultyId?: string, institutionId?: string) {
-    const queryClient = useQueryClient();
+    // Real-time subscriptions
+    useERPRealtime(institutionId);
 
-    // 1. Total Students in Institution
-    const { data: totalStudents = 0, isLoading: isTotalStudentsLoading } = useQuery({
-        queryKey: ['faculty-total-students', institutionId],
+    // OPTIMIZED: Fetch all dashboard data in parallel
+    const { data: dashboardData, isLoading } = useQuery({
+        queryKey: ['faculty-dashboard-all', facultyId, institutionId],
         queryFn: async () => {
-            if (!institutionId) return 0;
+            if (!facultyId || !institutionId) return null;
 
-            const { count } = await supabase
-                .from('students')
-                .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId);
+            const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+            const todayDate = new Date().toISOString().split('T')[0];
 
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 2 * 60 * 1000,
-        gcTime: 10 * 60 * 1000,
-    });
+            // Execute all queries in parallel
+            const [
+                totalStudentsRes,
+                facultyAssignment,
+                assignedSubjects,
+                todaySchedule,
+                todayAttendance
+            ] = await Promise.all([
+                // Total students count
+                supabase.from('students')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', institutionId),
 
-    // 2. Students in Faculty's Assigned Classes (Changed to use faculty_subjects)
-    const { data: myStudents = 0, isLoading: isMyStudentsLoading } = useQuery({
-        queryKey: ['faculty-my-students', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return 0;
+                // Faculty's class assignment
+                supabase.from('faculty_subjects')
+                    .select('section, classes:class_id(name)')
+                    .eq('faculty_profile_id', facultyId)
+                    .eq('assignment_type', 'class_teacher')
+                    .maybeSingle(),
 
-            // Get faculty's assigned class from faculty_subjects
-            const { data: assignment } = await supabase
-                .from('faculty_subjects')
-                .select(`
-                    section,
-                    classes:class_id (name)
-                `)
-                .eq('faculty_profile_id', facultyId)
-                .eq('assignment_type', 'class_teacher')
-                .maybeSingle();
+                // Assigned subjects
+                supabase.from('faculty_subjects')
+                    .select(`
+                        id, subject_id, class_id, section,
+                        subjects:subject_id(id, name),
+                        classes:class_id(id, name)
+                    `)
+                    .eq('faculty_profile_id', facultyId)
+                    .eq('assignment_type', 'subject_staff'),
 
-            if (!(assignment?.classes as any)?.name) return 0;
+                // Today's schedule
+                supabase.from('timetable_slots')
+                    .select(`
+                        start_time, end_time, room_number,
+                        subjects:subject_id(name),
+                        timetable_configs:config_id(
+                            classes:class_id(name),
+                            section
+                        )
+                    `)
+                    .eq('faculty_id', facultyId)
+                    .eq('day_of_week', today)
+                    .eq('is_break', false)
+                    .order('period_index'),
 
-            // Count students in that class
-            const { count } = await supabase
-                .from('students')
-                .select('id', { count: 'exact', head: true })
-                .eq('class_name', (assignment.classes as any)?.name)
-                .eq('section', assignment.section || 'A');
+                // Today's attendance count
+                supabase.from('student_attendance')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', institutionId)
+                    .eq('attendance_date', todayDate)
+                    .eq('status', 'present')
+            ]);
 
-            return count || 0;
-        },
-        enabled: !!facultyId,
-        staleTime: 2 * 60 * 1000,
-    });
+            // Get my students count and pending reviews
+            let myStudents = 0;
+            let pendingReviews = 0;
 
-    // 3. Faculty's Assigned Subjects
-    const { data: assignedSubjects = [], isLoading: isAssignedSubjectsLoading } = useQuery({
-        queryKey: ['faculty-assigned-subjects', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return [];
+            if (facultyAssignment.data?.classes) {
+                const className = (facultyAssignment.data.classes as any)?.name;
+                const section = facultyAssignment.data.section || 'A';
 
-            const { data, error } = await supabase
-                .from('faculty_subjects')
-                .select(`
-          *,
-          subjects:subject_id (id, name),
-          classes:class_id (id, name)
-        `)
-                .eq('faculty_profile_id', facultyId)
-                .eq('assignment_type', 'subject_staff'); // Filter only subjects
+                if (className) {
+                    // Get students in faculty's class
+                    const [studentsRes, leaveRequestsRes] = await Promise.all([
+                        supabase.from('students')
+                            .select('id', { count: 'exact', head: true })
+                            .eq('class_name', className)
+                            .eq('section', section),
 
-            if (error) throw error;
+                        // Get students for leave requests
+                        supabase.from('students')
+                            .select('id')
+                            .eq('class_name', className)
+                            .eq('section', section)
+                    ]);
 
-            return (data || []).map((item: any) => ({
+                    myStudents = studentsRes.count || 0;
+
+                    // Count pending leaves for these students
+                    if (leaveRequestsRes.data?.length) {
+                        const studentIds = leaveRequestsRes.data.map(s => s.id);
+                        const leavesRes = await supabase.from('leave_requests')
+                            .select('id', { count: 'exact', head: true })
+                            .in('student_id', studentIds)
+                            .eq('status', 'Pending');
+
+                        pendingReviews = leavesRes.count || 0;
+                    }
+                }
+            }
+
+            // Process assigned subjects
+            const subjects = (assignedSubjects.data || []).map((item: any) => ({
                 id: item.id,
                 subjectId: item.subject_id,
                 subjectName: item.subjects?.name || 'Unknown',
@@ -108,135 +136,52 @@ export function useFacultyDashboard(facultyId?: string, institutionId?: string) 
                 className: item.classes?.name || 'Unknown',
                 section: item.section,
             }));
-        },
-        enabled: !!facultyId,
-        staleTime: 2 * 60 * 1000,
-    });
 
-    // 4. Today's Schedule
-    const { data: todaySchedule = [], isLoading: isTodayScheduleLoading } = useQuery({
-        queryKey: ['faculty-today-schedule', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return [];
-
-            const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-
-            const { data, error } = await supabase
-                .from('timetable_slots')
-                .select(`
-          *,
-          subjects:subject_id (name),
-          timetable_configs:config_id (
-            classes:class_id (name),
-            section
-          )
-        `)
-                .eq('faculty_id', facultyId)
-                .eq('day_of_week', today)
-                .eq('is_break', false)
-                .order('period_index');
-
-            if (error) throw error;
-
-            return (data || []).map((slot: any) => ({
+            // Process today's schedule
+            const schedule = (todaySchedule.data || []).map((slot: any) => ({
                 time: `${slot.start_time.substring(0, 5)} - ${slot.end_time.substring(0, 5)}`,
                 subject: slot.subjects?.name || 'Unknown',
                 class: slot.timetable_configs?.classes?.name || 'Unknown',
                 section: slot.timetable_configs?.section || 'A',
                 room: slot.room_number || 'TBA',
             })) as TodaySchedule[];
+
+            // Calculate stats
+            const totalStudents = totalStudentsRes.count || 0;
+            const todayAttendanceCount = todayAttendance.count || 0;
+
+            const stats: DashboardStats = {
+                totalStudents,
+                myStudents,
+                activeSubjects: subjects.length,
+                todayClasses: schedule.length,
+                pendingReviews,
+                avgAttendance: totalStudents > 0
+                    ? `${Math.round((todayAttendanceCount / totalStudents) * 100)}%`
+                    : '0%',
+            };
+
+            return {
+                stats,
+                assignedSubjects: subjects,
+                todaySchedule: schedule,
+            };
         },
-        enabled: !!facultyId,
-        staleTime: 30 * 1000, // 30 seconds for today's schedule
+        enabled: !!facultyId && !!institutionId,
+        staleTime: 2 * 60 * 1000, // 2 minutes
     });
-
-    // 5. Today's Attendance Count
-    const { data: todayAttendanceCount = 0, isLoading: isTodayAttendanceLoading } = useQuery({
-        queryKey: ['faculty-today-attendance', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-            const today = new Date().toISOString().split('T')[0];
-
-            const { count } = await supabase
-                .from('student_attendance')
-                .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId)
-                .eq('attendance_date', today)
-                .eq('status', 'present');
-
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 30 * 1000,
-    });
-
-    // 6. Pending Leave Requests (For Faculty Assigned Classes)
-    const { data: pendingReviews = 0, isLoading: isPendingReviewsLoading } = useQuery({
-        queryKey: ['faculty-pending-leaves', facultyId],
-        queryFn: async () => {
-            if (!facultyId) return 0;
-
-            // Get faculty's assigned class
-            const { data: assignment } = await supabase
-                .from('faculty_subjects')
-                .select(`
-                    section,
-                    classes:class_id (name)
-                `)
-                .eq('faculty_profile_id', facultyId)
-                .eq('assignment_type', 'class_teacher')
-                .maybeSingle();
-
-            if (!(assignment?.classes as any)?.name) return 0;
-
-            // Get students in this class
-            const { data: students } = await supabase
-                .from('students')
-                .select('id')
-                .eq('class_name', (assignment.classes as any).name)
-                .eq('section', assignment.section || 'A');
-
-            if (!students?.length) return 0;
-            const studentIds = students.map(s => s.id);
-
-            // Count pending leaves for these students
-            const { count } = await supabase
-                .from('leave_requests')
-                .select('id', { count: 'exact', head: true })
-                .in('student_id', studentIds)
-                .eq('status', 'Pending');
-
-            return count || 0;
-        },
-        enabled: !!facultyId,
-        staleTime: 2 * 60 * 1000,
-    });
-
-    // 7. Aggregate Dashboard Stats
-    const stats: DashboardStats = {
-        totalStudents,
-        myStudents,
-        activeSubjects: assignedSubjects.length,
-        todayClasses: todaySchedule.length,
-        pendingReviews,
-        avgAttendance: totalStudents > 0
-            ? `${Math.round((todayAttendanceCount / totalStudents) * 100)}%`
-            : '0%',
-    };
-
-    // 8. Real-time Subscriptions (Migrated to SSE)
-    useERPRealtime(institutionId);
 
     return {
-        stats,
-        assignedSubjects,
-        todaySchedule,
-        isLoading:
-            isTotalStudentsLoading ||
-            isMyStudentsLoading ||
-            isAssignedSubjectsLoading ||
-            isTodayScheduleLoading ||
-            isTodayAttendanceLoading ||
-            isPendingReviewsLoading,
+        stats: dashboardData?.stats || {
+            totalStudents: 0,
+            myStudents: 0,
+            activeSubjects: 0,
+            todayClasses: 0,
+            pendingReviews: 0,
+            avgAttendance: '0%',
+        },
+        assignedSubjects: dashboardData?.assignedSubjects || [],
+        todaySchedule: dashboardData?.todaySchedule || [],
+        isLoading,
     };
 }
