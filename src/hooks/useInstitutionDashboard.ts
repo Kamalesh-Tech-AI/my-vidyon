@@ -1,172 +1,160 @@
-import { useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useERPRealtime } from './useERPRealtime';
 
-interface InstitutionDashboardStats {
-    totalStudents: number;
-    totalStaff: number;
-    todayAttendance: number;
-    attendancePercentage: string;
-    pendingApplications: number;
-    totalRevenue: number;
-    pendingLeaveRequests: number;
-}
-
 /**
- * Custom hook for institution dashboard data with real-time updates
- * Fetches:
- * - Student and staff counts
- * - Attendance analytics
- * - Financial metrics
- * - Application status
- * - Real-time updates for all metrics
+ * OPTIMIZED WITH PROGRESSIVE LOADING
+ * Institution dashboard with critical statistics first, detailed data second
  */
 export function useInstitutionDashboard(institutionId?: string) {
-    const queryClient = useQueryClient();
-
-    // 1. Total Students
-    const { data: totalStudents = 0 } = useQuery({
-        queryKey: ['institution-total-students', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-
-            const { count, error } = await supabase
-                .from('students')
-                .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId);
-
-            if (error) throw error;
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 5 * 60 * 1000,
-    });
-
-    // 2. Total Staff
-    const { data: totalStaff = 0 } = useQuery({
-        queryKey: ['institution-total-staff', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-
-            const { count, error } = await supabase
-                .from('profiles')
-                .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId)
-                .in('role', ['faculty', 'teacher', 'staff']);
-
-            if (error) throw error;
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 5 * 60 * 1000,
-    });
-
-    // 3. Today's Attendance
-    const { data: attendanceData } = useQuery({
-        queryKey: ['institution-today-attendance', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return { present: 0, total: 0 };
-
-            const today = new Date().toISOString().split('T')[0];
-
-            const { data, error } = await supabase
-                .from('student_attendance')
-                .select('status')
-                .eq('institution_id', institutionId)
-                .eq('attendance_date', today);
-
-            if (error) throw error;
-
-            const present = data?.filter(r => r.status === 'present').length || 0;
-            const total = data?.length || 0;
-
-            return { present, total };
-        },
-        enabled: !!institutionId,
-        staleTime: 30 * 1000, // 30 seconds
-    });
-
-    // 4. Pending Applications
-    const { data: pendingApplications = 0 } = useQuery({
-        queryKey: ['institution-pending-applications', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-
-            const { count, error } = await supabase
-                .from('applications')
-                .select('id', { count: 'exact', head: true })
-                .eq('institution_id', institutionId)
-                .eq('status', 'pending');
-
-            if (error) {
-                // Table might not exist
-                console.warn('Applications table not found');
-                return 0;
-            }
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 2 * 60 * 1000,
-    });
-
-    // 5. Total Revenue (from fee payments)
-    const { data: totalRevenue = 0 } = useQuery({
-        queryKey: ['institution-total-revenue', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-
-            const { data, error } = await supabase
-                .from('fee_payments')
-                .select('amount, status')
-                .eq('institution_id', institutionId)
-                .eq('status', 'paid');
-
-            if (error) throw error;
-
-            return data?.reduce((sum, fee) => sum + (fee.amount || 0), 0) || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 5 * 60 * 1000,
-    });
-
-    // 6. Pending Leave Requests
-    const { data: pendingLeaveRequests = 0 } = useQuery({
-        queryKey: ['institution-pending-leaves', institutionId],
-        queryFn: async () => {
-            if (!institutionId) return 0;
-
-            const { count, error } = await supabase
-                .from('leave_requests')
-                .select('id', { count: 'exact', head: true })
-                .eq('status', 'pending');
-
-            if (error) throw error;
-            return count || 0;
-        },
-        enabled: !!institutionId,
-        staleTime: 2 * 60 * 1000,
-    });
-
-    // 7. Calculate Dashboard Stats
-    const stats: InstitutionDashboardStats = {
-        totalStudents,
-        totalStaff,
-        todayAttendance: attendanceData?.present || 0,
-        attendancePercentage: attendanceData?.total
-            ? `${Math.round((attendanceData.present / attendanceData.total) * 100)}%`
-            : '0%',
-        pendingApplications,
-        totalRevenue,
-        pendingLeaveRequests,
-    };
-
-    // 8. Real-time Subscriptions (Migrated to SSE)
     useERPRealtime(institutionId);
+
+    // Resolve institution UUID (cached for 24h)
+    const { data: instUuid } = useQuery({
+        queryKey: ['institution-uuid', institutionId],
+        queryFn: async () => {
+            if (!institutionId) return null;
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(institutionId)) {
+                return institutionId;
+            }
+            const { data } = await supabase
+                .from('institutions')
+                .select('id')
+                .eq('institution_id', institutionId)
+                .maybeSingle();
+            return data?.id || null;
+        },
+        enabled: !!institutionId,
+        staleTime: 24 * 60 * 60 * 1000,
+    });
+
+    // CRITICAL DATA: Key metrics for instant display
+    const { data: criticalData, isLoading: criticalLoading } = useQuery({
+        queryKey: ['institution-dashboard-critical', instUuid],
+        queryFn: async () => {
+            if (!instUuid) return null;
+
+            const [
+                totalStudents,
+                totalFaculty,
+                totalClasses,
+                activeAnnouncementsCount
+            ] = await Promise.all([
+                // Student count
+                supabase.from('students')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', instUuid)
+                    .then(r => r.count || 0),
+
+                // Faculty count
+                supabase.from('teachers')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', instUuid)
+                    .then(r => r.count || 0),
+
+                // Classes count
+                supabase.from('classes')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', instUuid)
+                    .then(r => r.count || 0),
+
+                // Active announcements count
+                supabase.from('announcements')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('institution_id', institutionId!)
+                    .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+                    .then(r => r.count || 0),
+            ]);
+
+            return {
+                totalStudents,
+                totalFaculty,
+                totalClasses,
+                activeAnnouncementsCount,
+            };
+        },
+        enabled: !!instUuid,
+        staleTime: 1000 * 60,
+    });
+
+    // NON-CRITICAL DATA: Detailed lists loaded progressively
+    const { data: nonCriticalData, isLoading: nonCriticalLoading } = useQuery({
+        queryKey: ['institution-dashboard-noncritical', instUuid],
+        queryFn: async () => {
+            if (!instUuid) return null;
+
+            const [
+                recentStudents,
+                recentTeachers,
+                upcomingEvents,
+                feeCollections
+            ] = await Promise.all([
+                // Recent students (last 10)
+                supabase.from('students')
+                    .select('id, name, class_name, section, created_at')
+                    .eq('institution_id', instUuid)
+                    .order('created_at', { ascending: false })
+                    .limit(10)
+                    .then(r => r.data || []),
+
+                // Recent teachers (last 10)
+                supabase.from('teachers')
+                    .select('id, name, subject, created_at')
+                    .eq('institution_id', instUuid)
+                    .order('created_at', { ascending: false })
+                    .limit(10)
+                    .then(r => r.data || []),
+
+                // Upcoming events
+                supabase.from('academic_events')
+                    .select('id, title, event_date, event_type')
+                    .eq('institution_id', institutionId!)
+                    .gte('event_date', new Date().toISOString().split('T')[0])
+                    .order('event_date', { ascending: true })
+                    .limit(10)
+                    .then(r => r.data || []),
+
+                // Fee collections summary
+                supabase.from('fee_payments')
+                    .select('amount, status')
+                    .eq('institution_id', instUuid)
+                    .then(r => {
+                        const total = r.data?.reduce((sum, fee) => sum + (fee.amount || 0), 0) || 0;
+                        const paid = r.data?.filter(f => f.status === 'paid').reduce((sum, fee) => sum + (fee.amount || 0), 0) || 0;
+                        return { total, paid, pending: total - paid };
+                    }),
+            ]);
+
+            return {
+                recentStudents,
+                recentTeachers,
+                upcomingEvents,
+                feeCollections,
+            };
+        },
+        enabled: !!instUuid && !!criticalData,
+        staleTime: 1000 * 60 * 2,
+    });
+
+    const stats = {
+        totalStudents: criticalData?.totalStudents || 0,
+        totalFaculty: criticalData?.totalFaculty || 0,
+        totalClasses: criticalData?.totalClasses || 0,
+        activeAnnouncements: criticalData?.activeAnnouncementsCount || 0,
+        totalFees: nonCriticalData?.feeCollections?.total || 0,
+        collectedFees: nonCriticalData?.feeCollections?.paid || 0,
+        pendingFees: nonCriticalData?.feeCollections?.pending || 0,
+    };
 
     return {
         stats,
-        isLoading: false,
+        recentStudents: nonCriticalData?.recentStudents || [],
+        recentTeachers: nonCriticalData?.recentTeachers || [],
+        upcomingEvents: nonCriticalData?.upcomingEvents || [],
+        isLoadingCritical: criticalLoading,
+        isLoadingNonCritical: nonCriticalLoading,
+        isLoading: criticalLoading || nonCriticalLoading,
+        statsReady: !!criticalData && !criticalLoading,
+        detailsReady: !!nonCriticalData && !nonCriticalLoading,
     };
 }

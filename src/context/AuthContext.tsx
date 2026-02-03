@@ -276,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           toast.error('Session Expired', { description: 'Your access has been revoked.' });
         }
       }
-    }, 60000); // Reduce frequency to once per minute
+    }, 5 * 60 * 1000); // Check every 5 minutes instead of 1 minute
 
     return () => {
       subscription.unsubscribe();

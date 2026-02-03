@@ -60,14 +60,25 @@ export function StudentDashboard() {
     staleTime: 1000 * 60,
   });
 
-  // Use the optimized hook for all data
-  const { stats, assignments, attendanceRecords, grades, subjects, isLoading: dashboardLoading } = useStudentDashboard(
+  // Use the OPTIMIZED hook with progressive loading
+  const {
+    stats,
+    assignments,
+    attendanceRecords,
+    grades,
+    subjects,
+    classDetails,
+    isLoadingCritical,
+    isLoadingNonCritical,
+    statsReady,
+    detailsReady
+  } = useStudentDashboard(
     studentProfile?.id,
     studentProfile?.institution_id
   );
 
-  // Combined loading state
-  const isLoading = profileLoading || dashboardLoading;
+  // Combined loading state - only block if critical data is loading
+  const isLoading = profileLoading || isLoadingCritical;
 
   // Get today's attendance status
   const today = format(new Date(), 'yyyy-MM-dd');
